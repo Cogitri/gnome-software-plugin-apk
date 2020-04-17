@@ -313,7 +313,6 @@ gs_plugin_add_search (GsPlugin *plugin,
     {
       g_propagate_error (error, local_error);
       return FALSE;
-      ;
     }
 
   for (guint i = 0; i < g_variant_n_children (search_result); i++)
@@ -321,6 +320,11 @@ gs_plugin_add_search (GsPlugin *plugin,
       GVariant *pkg_val = g_variant_get_child_value (search_result, i);
       ApkdPackage package = g_variant_to_apkd_package (pkg_val);
       GsApp *app = apk_package_to_app (&package);
+      /*
+        FIXME: We currently can't tell if an app is a desktop app or not due to limitations
+        in apk and Software likes GENERIC apps, so let's just set all to AS_APP_KIND_DESKTOP
+      */
+      gs_app_set_kind (app, AS_APP_KIND_DESKTOP);
       gs_app_list_add (list, app);
     }
 
