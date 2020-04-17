@@ -11,28 +11,27 @@
 struct GsPluginData
 {
   GsApp *current_app;
-  ApkdHelper* proxy;
+  ApkdHelper *proxy;
 };
 
 typedef struct
 {
-    gchar *m_name;
-    gchar *m_version;
-    gchar *m_oldVersion;
-    gchar *m_arch;
-    gchar *m_license;
-    gchar *m_origin;
-    gchar *m_maintainer;
-    gchar *m_url;
-    gchar *m_description;
-    gchar *m_commit;
-    gchar *m_filename;
-    gulong m_installedSize;
-    gulong m_size;
-    glong m_buildTime;
-    gboolean m_isInstalled;
+  const gchar *m_name;
+  const gchar *m_version;
+  const gchar *m_oldVersion;
+  const gchar *m_arch;
+  const gchar *m_license;
+  const gchar *m_origin;
+  const gchar *m_maintainer;
+  const gchar *m_url;
+  const gchar *m_description;
+  const gchar *m_commit;
+  const gchar *m_filename;
+  gulong m_installedSize;
+  gulong m_size;
+  glong m_buildTime;
+  gboolean m_isInstalled;
 } ApkdPackage;
-
 
 static ApkdPackage
 g_variant_to_apkd_package (GVariant *value_tuple)
@@ -64,13 +63,15 @@ apk_package_to_app (ApkdPackage *pkg)
 
   app = gs_app_new (pkg->m_name);
 
-  gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
+  gs_app_set_kind (app, AS_APP_KIND_GENERIC);
   gs_app_set_scope (app, AS_APP_SCOPE_SYSTEM);
   gs_app_set_allow_cancel (app, FALSE);
+  gs_app_add_source (app, pkg->m_name);
   gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, pkg->m_name);
-  gs_app_set_version (app, pkg->m_oldVersion);
+  gs_app_set_version (app, pkg->m_oldVersion ? pkg->m_oldVersion : pkg->m_version);
   gs_app_set_update_version (app, pkg->m_version);
   gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, pkg->m_description);
+  gs_app_set_description (app, GS_APP_QUALITY_UNKNOWN, pkg->m_description);
   gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, pkg->m_url);
   gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, pkg->m_license);
   gs_app_set_origin (app, "alpine");
@@ -78,11 +79,16 @@ apk_package_to_app (ApkdPackage *pkg)
   gs_app_set_management_plugin (app, "apk");
   gs_app_set_metadata (app, "apk::name", pkg->m_name);
   gs_app_set_size_installed (app, pkg->m_installedSize);
-  if(pkg->m_isInstalled) {
-    gs_app_set_state (app, AS_APP_STATE_INSTALLED);
-  } else {
-    gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
-  }
+  gs_app_set_size_download (app, pkg->m_size);
+  gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
+  if (pkg->m_isInstalled)
+    {
+      gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+    }
+  else
+    {
+      gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+    }
 
   return app;
 }
@@ -125,7 +131,7 @@ gboolean
 gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
 {
   GError *local_error = NULL;
-  GsPluginData* priv = gs_plugin_get_data(plugin);
+  GsPluginData *priv = gs_plugin_get_data (plugin);
 
   priv->proxy = apkd_helper_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
                                                     G_DBUS_PROXY_FLAGS_NONE,
@@ -134,12 +140,13 @@ gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
                                                     cancellable,
                                                     &local_error);
 
-  if(local_error != NULL) {
-    g_propagate_error(error, local_error);
-    return FALSE;
-  }
+  if (local_error != NULL)
+    {
+      g_propagate_error (error, local_error);
+      return FALSE;
+    }
 
-  g_signal_connect (priv->proxy, "g-signal", G_CALLBACK(apk_progress_signal_connect_callback), plugin);
+  g_signal_connect (priv->proxy, "g-signal", G_CALLBACK (apk_progress_signal_connect_callback), plugin);
 
   return TRUE;
 }
@@ -151,8 +158,7 @@ gs_plugin_refresh (GsPlugin *plugin,
                    GError **error)
 {
   GError *local_error = NULL;
-  GsPluginData* priv = gs_plugin_get_data(plugin);
-
+  GsPluginData *priv = gs_plugin_get_data (plugin);
 
   if (apkd_helper_call_update_repositories_sync (priv->proxy, cancellable, &local_error))
     {
@@ -173,14 +179,13 @@ gs_plugin_add_updates (GsPlugin *plugin,
 {
   GVariant *upgradable_packages = NULL;
   GError *local_error = NULL;
-  GsPluginData* priv = gs_plugin_get_data(plugin);
+  GsPluginData *priv = gs_plugin_get_data (plugin);
 
-  if (!apkd_helper_call_list_upgradable_packages_sync(priv->proxy, &upgradable_packages, cancellable, &local_error))
+  if (!apkd_helper_call_list_upgradable_packages_sync (priv->proxy, &upgradable_packages, cancellable, &local_error))
     {
       g_propagate_error (error, local_error);
       return FALSE;
     }
-
 
   for (gsize i = 0; i < g_variant_n_children (upgradable_packages); i++)
     {
@@ -206,9 +211,9 @@ gs_plugin_add_installed (GsPlugin *plugin,
 {
   GVariant *installed_packages = NULL;
   GError *local_error = NULL;
-  GsPluginData* priv = gs_plugin_get_data(plugin);
+  GsPluginData *priv = gs_plugin_get_data (plugin);
 
-  if (!apkd_helper_call_list_installed_packages_sync(priv->proxy, &installed_packages, cancellable, &local_error))
+  if (!apkd_helper_call_list_installed_packages_sync (priv->proxy, &installed_packages, cancellable, &local_error))
     {
       g_propagate_error (error, local_error);
       return FALSE;
@@ -237,7 +242,7 @@ gs_plugin_app_install (GsPlugin *plugin,
 {
   GError *local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
-  const gchar* app_name[2];
+  const gchar *app_name[2];
 
   /* We can only install apps we know of */
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
@@ -248,7 +253,7 @@ gs_plugin_app_install (GsPlugin *plugin,
   app_name[1] = '\0';
   gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
-  if (!apkd_helper_call_add_package_sync(priv->proxy, app_name, cancellable, &local_error))
+  if (!apkd_helper_call_add_package_sync (priv->proxy, app_name, cancellable, &local_error))
     {
       g_propagate_error (error, local_error);
       gs_app_set_state_recover (app);
@@ -269,7 +274,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
 {
   GError *local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
-  const gchar* app_name[2];
+  const gchar *app_name[2];
 
   /* We can only remove apps we know of */
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
@@ -280,7 +285,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
   app_name[1] = '\0';
   gs_app_set_state (app, AS_APP_STATE_REMOVING);
 
-  if (!apkd_helper_call_delete_package_sync(priv->proxy, app_name, cancellable, &local_error))
+  if (!apkd_helper_call_delete_package_sync (priv->proxy, app_name, cancellable, &local_error))
     {
       g_propagate_error (error, local_error);
       gs_app_set_state_recover (app);
@@ -304,7 +309,7 @@ gs_plugin_add_search (GsPlugin *plugin,
   GVariant *search_result = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
-  if (!apkd_helper_call_search_for_packages_sync(priv->proxy, (const gchar *const*)values, &search_result, cancellable, &local_error))
+  if (!apkd_helper_call_search_for_packages_sync (priv->proxy, (const gchar *const *) values, &search_result, cancellable, &local_error))
     {
       g_propagate_error (error, local_error);
       return FALSE;
@@ -333,7 +338,7 @@ gs_plugin_update (GsPlugin *plugin,
 
   for (guint i = 0; i < gs_app_list_length (apps); i++)
     {
-      const gchar* app_name[2];
+      const gchar *app_name[2];
       GsApp *app = gs_app_list_index (apps, i);
       priv->current_app = app;
 
@@ -341,7 +346,7 @@ gs_plugin_update (GsPlugin *plugin,
       app_name[1] = '\0';
       gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
-      if (!apkd_helper_call_upgrade_package_sync(priv->proxy, app_name, cancellable, &local_error))
+      if (!apkd_helper_call_upgrade_package_sync (priv->proxy, app_name, cancellable, &local_error))
         {
           g_propagate_error (error, local_error);
           gs_app_set_state_recover (app);
