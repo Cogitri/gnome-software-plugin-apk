@@ -8,6 +8,10 @@
 #include <apk-polkit/apkd-dbus-client.h>
 #include <gnome-software.h>
 
+/**
+  Helper struct holding the current app (used to set progress) and
+  the GDBusProxy used to communicate with apk-polkit
+*/
 struct GsPluginData
 {
   GsApp *current_app;
@@ -250,6 +254,7 @@ gs_plugin_app_install (GsPlugin *plugin,
 
   priv->current_app = app;
   app_name[0] = gs_app_get_metadata_item (app, "apk::name");
+  /* FIXME: Properly zero terminate the array */
   app_name[1] = '\0';
   gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
@@ -282,6 +287,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
 
   priv->current_app = app;
   app_name[0] = gs_app_get_metadata_item (app, "apk::name");
+  /* FIXME: Properly zero terminate the array */
   app_name[1] = '\0';
   gs_app_set_state (app, AS_APP_STATE_REMOVING);
 
@@ -347,6 +353,7 @@ gs_plugin_update (GsPlugin *plugin,
       priv->current_app = app;
 
       app_name[0] = gs_app_get_metadata_item (app, "apk::name");
+      /* FIXME: Properly zero terminate the array */
       app_name[1] = '\0';
       gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
