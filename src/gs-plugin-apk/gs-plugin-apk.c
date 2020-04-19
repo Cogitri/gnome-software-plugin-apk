@@ -201,6 +201,7 @@ gs_plugin_add_updates (GsPlugin *plugin,
       pkg = g_variant_to_apkd_package (value_tuple);
       app = apk_package_to_app (&pkg);
       gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
+      gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
       gs_app_list_add (list, app);
     }
 
