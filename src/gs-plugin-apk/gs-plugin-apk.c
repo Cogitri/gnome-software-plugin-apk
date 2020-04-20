@@ -259,7 +259,7 @@ gs_plugin_app_install (GsPlugin *plugin,
   app_name[1] = '\0';
   gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
-  if (!apkd_helper_call_add_package_sync (priv->proxy, app_name, cancellable, &local_error))
+  if (!apkd_helper_call_add_packages_sync (priv->proxy, app_name, cancellable, &local_error))
     {
       g_propagate_error (error, local_error);
       gs_app_set_state_recover (app);
@@ -292,7 +292,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
   app_name[1] = '\0';
   gs_app_set_state (app, AS_APP_STATE_REMOVING);
 
-  if (!apkd_helper_call_delete_package_sync (priv->proxy, app_name, cancellable, &local_error))
+  if (!apkd_helper_call_delete_packages_sync (priv->proxy, app_name, cancellable, &local_error))
     {
       g_propagate_error (error, local_error);
       gs_app_set_state_recover (app);
@@ -316,7 +316,7 @@ gs_plugin_add_search (GsPlugin *plugin,
   GVariant *search_result = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
-  if (!apkd_helper_call_search_for_packages_sync (priv->proxy, (const gchar *const *) values, &search_result, cancellable, &local_error))
+  if (!apkd_helper_call_search_package_names_sync (priv->proxy, (const gchar *const *) values, &search_result, cancellable, &local_error))
     {
       g_propagate_error (error, local_error);
       return FALSE;
@@ -358,7 +358,7 @@ gs_plugin_update (GsPlugin *plugin,
       app_name[1] = '\0';
       gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
-      if (!apkd_helper_call_upgrade_package_sync (priv->proxy, app_name, cancellable, &local_error))
+      if (!apkd_helper_call_upgrade_packages_sync (priv->proxy, app_name, cancellable, &local_error))
         {
           g_propagate_error (error, local_error);
           gs_app_set_state_recover (app);
@@ -369,6 +369,208 @@ gs_plugin_update (GsPlugin *plugin,
       gs_app_set_state (app, AS_APP_STATE_INSTALLED);
       priv->current_app = NULL;
     }
+
+  return TRUE;
+}
+
+void
+gs_plugin_adopt_app (GsPlugin *plugin, GsApp *app)
+{
+  if (gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_PACKAGE &&
+      gs_app_get_scope (app) == AS_APP_SCOPE_SYSTEM)
+    {
+      gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
+    }
+
+  if (gs_app_get_kind (app) == AS_APP_KIND_OS_UPGRADE)
+    {
+      gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
+    }
+}
+
+static gboolean
+resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
+                                               GsApp *app,
+                                               GsPluginRefineFlags flags,
+                                               GCancellable *cancellable,
+                                               GError **error)
+{
+  gchar *fn;
+  GError *local_error = NULL;
+  GsPluginData *priv = gs_plugin_get_data (plugin);
+  GVariant *search_result;
+  const gchar *tmp = gs_app_get_id (app);
+
+  /* FIXME: Ideally we'd use gs_app_get_metadata("appstream::source-file") but apparently that's not realiable */
+  /* Is there a desktop file ? */
+  if (g_strrstr (tmp, ".desktop") == NULL)
+    {
+      fn = g_strdup_printf ("/usr/share/applications/%s.desktop", tmp);
+    }
+  else
+    {
+      fn = g_strdup_printf ("/usr/share/applications/%s", tmp);
+    }
+  /* If there is no desktop file (or it doesn't match $id.desktop), is there an appdata file? */
+  if (!g_file_test (fn, G_FILE_TEST_EXISTS))
+    {
+      fn = g_strdup_printf ("/usr/share/metainfo/%s.metainfo.xml", tmp);
+      if (!g_file_test (fn, G_FILE_TEST_EXISTS))
+        {
+          g_free (fn);
+          fn = g_strdup_printf ("/usr/share/metainfo/%s.appdata.xml", tmp);
+          if (!g_file_test (fn, G_FILE_TEST_EXISTS))
+            {
+              fn = g_strdup_printf ("/usr/share/appdata/%s.appdata.xml", tmp);
+            }
+        }
+    }
+
+  if (fn == NULL)
+    {
+      return FALSE;
+    }
+
+  if (!apkd_helper_call_search_file_owner_sync (priv->proxy, fn, &search_result, cancellable, &local_error))
+    {
+      g_warning ("Couldn't find any matches for appdata file");
+      g_propagate_error (error, local_error);
+      return FALSE;
+    }
+
+  ApkdPackage package = g_variant_to_apkd_package (search_result);
+
+  if (gs_app_get_source_default (app) == NULL)
+    {
+      gs_app_add_source (app, package.m_name);
+      gs_app_set_metadata (app, "apk::name", package.m_name);
+      gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
+      gs_app_set_bundle_kind (app, AS_BUNDLE_KIND_PACKAGE);
+      gs_app_set_size_installed (app, package.m_installedSize);
+    }
+
+  return TRUE;
+}
+
+static gboolean
+resolve_available_packages_app (GsPlugin *plugin,
+                                GPtrArray *arr,
+                                GCancellable *cancellable,
+                                GError **error)
+{
+  GVariant *installed_packages = NULL;
+  GError *local_error = NULL;
+  GsPluginData *priv = gs_plugin_get_data (plugin);
+
+  if (!apkd_helper_call_list_installed_packages_sync (priv->proxy, &installed_packages, cancellable, &local_error))
+    {
+      g_propagate_error (error, local_error);
+      return FALSE;
+    }
+
+  for (guint i = 0; i < g_variant_n_children (installed_packages); i++)
+    {
+      GVariant *value_tuple = g_variant_get_child_value (installed_packages, i);
+      ApkdPackage pkg = g_variant_to_apkd_package (value_tuple);
+      GsApp *app = NULL;
+
+      for (guint j = 0; j < arr->len; j++)
+        {
+          GsApp *potential_match = g_ptr_array_index (arr, j);
+          if (pkg.m_name == gs_app_get_source_default (potential_match))
+            {
+              app = potential_match;
+              break;
+            }
+        }
+
+      if (app == NULL)
+        {
+          continue;
+        }
+
+      gs_app_set_version (app, pkg.m_version);
+      if (gs_app_get_state (app) == AS_APP_STATE_UNKNOWN)
+        {
+          if (pkg.m_isInstalled)
+            {
+              gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+            }
+          else
+            {
+              gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+            }
+        }
+
+      if (gs_app_get_origin (app) == NULL)
+        {
+          gs_app_set_origin (app, "alpine");
+        }
+
+      // set more metadata for packages that don't have appstream data
+      gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, pkg.m_name);
+      gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, pkg.m_description);
+      gs_app_set_description (app, GS_APP_QUALITY_UNKNOWN, pkg.m_description);
+      return TRUE;
+    }
+
+  return FALSE;
+}
+
+gboolean
+gs_plugin_refine (GsPlugin *plugin,
+                  GsAppList *apps,
+                  GsPluginRefineFlags flags,
+                  GCancellable *cancellable,
+                  GError **error)
+{
+  GError *local_error = NULL;
+  GPtrArray *not_found_app_arr = g_ptr_array_new ();
+
+  g_debug ("Starting refinining process");
+
+  for (guint i = 0; i < gs_app_list_length (apps); i++)
+    {
+      GsApp *app = gs_app_list_index (apps, i);
+
+      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD))
+        continue;
+
+      /* set management plugin for apps where appstream just added the source package name in refine() */
+      if (gs_app_get_management_plugin (app) == NULL &&
+          gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_PACKAGE &&
+          gs_app_get_scope (app) == AS_APP_SCOPE_SYSTEM &&
+          gs_app_get_source_default (app) != NULL)
+        {
+          gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
+        }
+
+      /* resolve the source package name based on installed appdata/desktop file name */
+      if (gs_app_get_management_plugin (app) == NULL &&
+          gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_UNKNOWN &&
+          gs_app_get_scope (app) == AS_APP_SCOPE_SYSTEM &&
+          gs_app_get_source_default (app) == NULL)
+        {
+          if (resolve_appstream_source_file_to_package_name (plugin, app, flags, cancellable, &local_error))
+            {
+              continue;
+            }
+          else
+            {
+              g_propagate_error (error, local_error);
+              return FALSE;
+            }
+        }
+
+      if (g_strcmp0 (gs_app_get_management_plugin (app), gs_plugin_get_name (plugin)) != 0 || gs_app_get_source_default (app) == NULL)
+        {
+          continue;
+        }
+
+      g_ptr_array_add (not_found_app_arr, app);
+    }
+
+  resolve_available_packages_app (plugin, not_found_app_arr, cancellable, NULL);
 
   return TRUE;
 }
