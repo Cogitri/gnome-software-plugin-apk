@@ -146,6 +146,7 @@ gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
 
   if (local_error != NULL)
     {
+      g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
       return FALSE;
     }
@@ -170,6 +171,7 @@ gs_plugin_refresh (GsPlugin *plugin,
     }
   else
     {
+      g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
       return FALSE;
     }
@@ -187,6 +189,7 @@ gs_plugin_add_updates (GsPlugin *plugin,
 
   if (!apkd_helper_call_list_upgradable_packages_sync (priv->proxy, &upgradable_packages, cancellable, &local_error))
     {
+      g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
       return FALSE;
     }
@@ -220,6 +223,7 @@ gs_plugin_add_installed (GsPlugin *plugin,
 
   if (!apkd_helper_call_list_installed_packages_sync (priv->proxy, &installed_packages, cancellable, &local_error))
     {
+      g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
       return FALSE;
     }
@@ -261,6 +265,7 @@ gs_plugin_app_install (GsPlugin *plugin,
 
   if (!apkd_helper_call_add_packages_sync (priv->proxy, app_name, cancellable, &local_error))
     {
+      g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
       gs_app_set_state_recover (app);
       priv->current_app = NULL;
@@ -294,6 +299,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
 
   if (!apkd_helper_call_delete_packages_sync (priv->proxy, app_name, cancellable, &local_error))
     {
+      g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
       gs_app_set_state_recover (app);
       priv->current_app = NULL;
@@ -318,6 +324,7 @@ gs_plugin_add_search (GsPlugin *plugin,
 
   if (!apkd_helper_call_search_package_names_sync (priv->proxy, (const gchar *const *) values, &search_result, cancellable, &local_error))
     {
+      g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
       return FALSE;
     }
@@ -360,6 +367,7 @@ gs_plugin_update (GsPlugin *plugin,
 
       if (!apkd_helper_call_upgrade_packages_sync (priv->proxy, app_name, cancellable, &local_error))
         {
+          g_dbus_error_strip_remote_error (local_error);
           g_propagate_error (error, local_error);
           gs_app_set_state_recover (app);
           priv->current_app = NULL;
@@ -434,6 +442,7 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
   if (!apkd_helper_call_search_file_owner_sync (priv->proxy, fn, &search_result, cancellable, &local_error))
     {
       g_warning ("Couldn't find any matches for appdata file");
+      g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
       return FALSE;
     }
@@ -464,6 +473,7 @@ resolve_available_packages_app (GsPlugin *plugin,
 
   if (!apkd_helper_call_list_installed_packages_sync (priv->proxy, &installed_packages, cancellable, &local_error))
     {
+      g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
       return FALSE;
     }
@@ -557,6 +567,7 @@ gs_plugin_refine (GsPlugin *plugin,
             }
           else
             {
+              g_dbus_error_strip_remote_error (local_error);
               g_propagate_error (error, local_error);
               return FALSE;
             }
