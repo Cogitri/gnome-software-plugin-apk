@@ -7,6 +7,9 @@
 
 #include <apk-polkit/apkd-dbus-client.h>
 #include <gnome-software.h>
+#include <libintl.h>
+#include <locale.h>
+#define _(string) gettext (string)
 
 /**
   Helper struct holding the current app (used to set progress) and
@@ -105,18 +108,31 @@ apk_progress_signal_connect_callback (GDBusProxy *proxy,
                                       gpointer user_data)
 {
   GsPluginData *priv = gs_plugin_get_data ((GsPlugin *) user_data);
+  GsPluginStatus plugin_status = GS_PLUGIN_STATUS_DOWNLOADING;
   uint percentage =
       g_variant_get_uint32 (g_variant_get_child_value (parameters, 0));
 
   /* nothing in progress */
-  if (priv->current_app == NULL)
+  if (priv->current_app != NULL)
     {
-      g_debug ("apk percentage: %u%%", percentage);
-      return;
+      g_debug ("apk percentage for %s: %u%%",
+               gs_app_get_unique_id (priv->current_app), percentage);
+      gs_app_set_progress (priv->current_app, percentage);
+
+      switch (gs_app_get_state (priv->current_app))
+        {
+        case AS_APP_STATE_INSTALLING:
+          plugin_status = GS_PLUGIN_STATUS_INSTALLING;
+          break;
+        case AS_APP_STATE_REMOVING:
+          plugin_status = GS_PLUGIN_STATUS_REMOVING;
+          break;
+        default:
+          break;
+        }
     }
-  g_debug ("apk percentage for %s: %u%%",
-           gs_app_get_unique_id (priv->current_app), percentage);
-  gs_app_set_progress (priv->current_app, percentage);
+
+  gs_plugin_status_update ((GsPlugin *) user_data, priv->current_app, plugin_status);
 }
 
 void
@@ -164,15 +180,22 @@ gs_plugin_refresh (GsPlugin *plugin,
 {
   GError *local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
+  GsApp *app_dl = gs_app_new (gs_plugin_get_name (plugin));
+  priv->current_app = app_dl;
 
+  gs_app_set_summary_missing (app_dl, _ ("Getting apk repository indexes…"));
+  gs_plugin_status_update (plugin, app_dl, GS_PLUGIN_STATUS_DOWNLOADING);
   if (apkd_helper_call_update_repositories_sync (priv->proxy, cancellable, &local_error))
     {
+      gs_app_set_progress (app_dl, 100);
+      priv->current_app = NULL;
       return TRUE;
     }
   else
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, local_error);
+      priv->current_app = NULL;
       return FALSE;
     }
 }
