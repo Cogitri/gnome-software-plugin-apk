@@ -499,7 +499,6 @@ resolve_available_packages_app (GsPlugin *plugin,
           continue;
         }
 
-      gs_app_set_version (app, pkg.m_version);
       if (gs_app_get_state (app) == AS_APP_STATE_UNKNOWN)
         {
           if (pkg.m_isInstalled)
@@ -521,6 +520,11 @@ resolve_available_packages_app (GsPlugin *plugin,
       gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, pkg.m_name);
       gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, pkg.m_description);
       gs_app_set_description (app, GS_APP_QUALITY_UNKNOWN, pkg.m_description);
+      gs_app_set_url (app, GS_APP_QUALITY_UNKNOWN, pkg.m_url);
+      gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, pkg.m_license);
+      gs_app_set_size_download (app, pkg.m_size);
+      gs_app_set_size_installed (app, pkg.m_installedSize);
+      gs_app_set_version (app, pkg.m_version);
       return TRUE;
     }
 
@@ -581,7 +585,18 @@ gs_plugin_refine (GsPlugin *plugin,
       g_ptr_array_add (not_found_app_arr, app);
     }
 
-  resolve_available_packages_app (plugin, not_found_app_arr, cancellable, NULL);
+  if (flags &
+      (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
+       GS_PLUGIN_REFINE_FLAGS_DEFAULT))
+    {
+      resolve_available_packages_app (plugin, not_found_app_arr, cancellable, NULL);
+    }
 
   return TRUE;
 }
