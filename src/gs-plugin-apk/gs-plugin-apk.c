@@ -434,8 +434,9 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
         }
     }
 
-  if (fn == NULL)
+  if (!g_file_test (fn, G_FILE_TEST_EXISTS))
     {
+      g_set_error (error, GS_PLUGIN_ERROR, GS_PLUGIN_ERROR_FAILED, "No desktop or appstream file found for app %s", gs_app_get_unique_id (app));
       return FALSE;
     }
 
@@ -528,6 +529,7 @@ resolve_available_packages_app (GsPlugin *plugin,
       return TRUE;
     }
 
+  g_set_error_literal (error, GS_PLUGIN_ERROR, GS_PLUGIN_ERROR_FAILED, "No app found to refine");
   return FALSE;
 }
 
