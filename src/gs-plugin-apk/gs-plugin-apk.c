@@ -150,7 +150,7 @@ gs_plugin_initialize (GsPlugin *plugin)
 gboolean
 gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
 {
-  GError *local_error = NULL;
+  g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
   priv->proxy = apkd_helper_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
@@ -163,7 +163,7 @@ gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
   if (local_error != NULL)
     {
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
@@ -178,9 +178,9 @@ gs_plugin_refresh (GsPlugin *plugin,
                    GCancellable *cancellable,
                    GError **error)
 {
-  GError *local_error = NULL;
+  g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
-  GsApp *app_dl = gs_app_new (gs_plugin_get_name (plugin));
+  g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
   priv->current_app = app_dl;
 
   gs_app_set_summary_missing (app_dl, _ ("Getting apk repository indexes…"));
@@ -195,7 +195,7 @@ gs_plugin_refresh (GsPlugin *plugin,
   else
     {
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
       priv->current_app = NULL;
       return FALSE;
     }
@@ -207,21 +207,21 @@ gs_plugin_add_updates (GsPlugin *plugin,
                        GCancellable *cancellable,
                        GError **error)
 {
-  GVariant *upgradable_packages = NULL;
-  GError *local_error = NULL;
+  g_autoptr (GVariant) upgradable_packages = NULL;
+  g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
   if (!apkd_helper_call_list_upgradable_packages_sync (priv->proxy, &upgradable_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
   for (gsize i = 0; i < g_variant_n_children (upgradable_packages); i++)
     {
-      GsApp *app;
-      GVariant *value_tuple;
+      g_autoptr (GsApp) app = NULL;
+      g_autoptr (GVariant) value_tuple = NULL;
       ApkdPackage pkg;
 
       value_tuple = g_variant_get_child_value (upgradable_packages, i);
@@ -241,21 +241,21 @@ gs_plugin_add_installed (GsPlugin *plugin,
                          GCancellable *cancellable,
                          GError **error)
 {
-  GVariant *installed_packages = NULL;
-  GError *local_error = NULL;
+  g_autoptr (GVariant) installed_packages = NULL;
+  g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
   if (!apkd_helper_call_list_installed_packages_sync (priv->proxy, &installed_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
   for (gsize i = 0; i < g_variant_n_children (installed_packages); i++)
     {
-      GsApp *app;
-      GVariant *value_tuple;
+      g_autoptr (GsApp) app = NULL;
+      g_autoptr (GVariant) value_tuple = NULL;
       ApkdPackage pkg;
 
       value_tuple = g_variant_get_child_value (installed_packages, i);
@@ -273,7 +273,7 @@ gs_plugin_app_install (GsPlugin *plugin,
                        GCancellable *cancellable,
                        GError **error)
 {
-  GError *local_error = NULL;
+  g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
   const gchar *app_name[2];
 
@@ -290,7 +290,7 @@ gs_plugin_app_install (GsPlugin *plugin,
   if (!apkd_helper_call_add_packages_sync (priv->proxy, app_name, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
       gs_app_set_state_recover (app);
       priv->current_app = NULL;
       return FALSE;
@@ -307,7 +307,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
                       GCancellable *cancellable,
                       GError **error)
 {
-  GError *local_error = NULL;
+  g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
   const gchar *app_name[2];
 
@@ -324,7 +324,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
   if (!apkd_helper_call_delete_packages_sync (priv->proxy, app_name, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
       gs_app_set_state_recover (app);
       priv->current_app = NULL;
       return FALSE;
@@ -342,22 +342,22 @@ gs_plugin_add_search (GsPlugin *plugin,
                       GCancellable *cancellable,
                       GError **error)
 {
-  GError *local_error = NULL;
-  GVariant *search_result = NULL;
+  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GVariant) search_result = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
   if (!apkd_helper_call_search_package_names_sync (priv->proxy, (const gchar *const *) values, &search_result, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
   for (guint i = 0; i < g_variant_n_children (search_result); i++)
     {
-      GVariant *pkg_val = g_variant_get_child_value (search_result, i);
+      g_autoptr (GVariant) pkg_val = g_variant_get_child_value (search_result, i);
       ApkdPackage package = g_variant_to_apkd_package (pkg_val);
-      GsApp *app = apk_package_to_app (&package);
+      g_autoptr (GsApp) app = apk_package_to_app (&package);
       /*
         FIXME: We currently can't tell if an app is a desktop app or not due to limitations
         in apk and Software likes GENERIC apps, so let's just set all to AS_APP_KIND_DESKTOP
@@ -375,7 +375,7 @@ gs_plugin_update (GsPlugin *plugin,
                   GCancellable *cancellable,
                   GError **error)
 {
-  GError *local_error = NULL;
+  g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
   for (guint i = 0; i < gs_app_list_length (apps); i++)
@@ -392,7 +392,7 @@ gs_plugin_update (GsPlugin *plugin,
       if (!apkd_helper_call_upgrade_packages_sync (priv->proxy, app_name, cancellable, &local_error))
         {
           g_dbus_error_strip_remote_error (local_error);
-          g_propagate_error (error, local_error);
+          g_propagate_error (error, g_steal_pointer (&local_error));
           gs_app_set_state_recover (app);
           priv->current_app = NULL;
           return FALSE;
@@ -428,10 +428,10 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
                                                GCancellable *cancellable,
                                                GError **error)
 {
+  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GVariant) search_result = NULL;
   gchar *fn;
-  GError *local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
-  GVariant *search_result;
   const gchar *tmp = gs_app_get_id (app);
 
   /* FIXME: Ideally we'd use gs_app_get_metadata("appstream::source-file") but apparently that's not realiable */
@@ -469,7 +469,7 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
     {
       g_warning ("Couldn't find any matches for appdata file");
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
@@ -493,22 +493,22 @@ resolve_available_packages_app (GsPlugin *plugin,
                                 GCancellable *cancellable,
                                 GError **error)
 {
-  GVariant *installed_packages = NULL;
-  GError *local_error = NULL;
+  g_autoptr (GVariant) installed_packages = NULL;
+  g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
   if (!apkd_helper_call_list_installed_packages_sync (priv->proxy, &installed_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
   for (guint i = 0; i < g_variant_n_children (installed_packages); i++)
     {
-      GVariant *value_tuple = g_variant_get_child_value (installed_packages, i);
-      ApkdPackage pkg = g_variant_to_apkd_package (value_tuple);
       GsApp *app = NULL;
+      g_autoptr (GVariant) value_tuple = g_variant_get_child_value (installed_packages, i);
+      ApkdPackage pkg = g_variant_to_apkd_package (value_tuple);
 
       for (guint j = 0; j < arr->len; j++)
         {
@@ -565,8 +565,8 @@ gs_plugin_refine (GsPlugin *plugin,
                   GCancellable *cancellable,
                   GError **error)
 {
-  GError *local_error = NULL;
-  GPtrArray *not_found_app_arr = g_ptr_array_new ();
+  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GPtrArray) not_found_app_arr = g_ptr_array_new ();
 
   g_debug ("Starting refinining process");
 
@@ -599,7 +599,7 @@ gs_plugin_refine (GsPlugin *plugin,
           else
             {
               g_dbus_error_strip_remote_error (local_error);
-              g_propagate_error (error, local_error);
+              g_propagate_error (error, g_steal_pointer (&local_error));
               return FALSE;
             }
         }
