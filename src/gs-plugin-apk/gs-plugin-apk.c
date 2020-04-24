@@ -189,6 +189,7 @@ gs_plugin_refresh (GsPlugin *plugin,
     {
       gs_app_set_progress (app_dl, 100);
       priv->current_app = NULL;
+      gs_plugin_updates_changed (plugin);
       return TRUE;
     }
   else
@@ -401,6 +402,7 @@ gs_plugin_update (GsPlugin *plugin,
       priv->current_app = NULL;
     }
 
+  gs_plugin_updates_changed (plugin);
   return TRUE;
 }
 
