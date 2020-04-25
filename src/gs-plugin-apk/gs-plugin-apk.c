@@ -328,8 +328,7 @@ gs_plugin_app_install (GsPlugin *plugin,
 
   priv->current_app = app;
   app_name[0] = gs_app_get_metadata_item (app, "apk::name");
-  /* FIXME: Properly zero terminate the array */
-  app_name[1] = '\0';
+  app_name[1] = NULL;
   gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
   if (!apkd_helper_call_add_packages_sync (priv->proxy, app_name, cancellable, &local_error))
@@ -364,8 +363,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
 
   priv->current_app = app;
   app_name[0] = gs_app_get_metadata_item (app, "apk::name");
-  /* FIXME: Properly zero terminate the array */
-  app_name[1] = '\0';
+  app_name[1] = NULL;
   gs_app_set_state (app, AS_APP_STATE_REMOVING);
 
   if (!apkd_helper_call_delete_packages_sync (priv->proxy, app_name, cancellable, &local_error))
@@ -436,8 +434,7 @@ gs_plugin_update (GsPlugin *plugin,
       g_debug ("Updating app %s", gs_app_get_unique_id (app));
 
       app_name[0] = gs_app_get_metadata_item (app, "apk::name");
-      /* FIXME: Properly zero terminate the array */
-      app_name[1] = '\0';
+      app_name[1] = NULL;
       gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
       if (!apkd_helper_call_upgrade_packages_sync (priv->proxy, app_name, cancellable, &local_error))
