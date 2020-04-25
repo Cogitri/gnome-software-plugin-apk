@@ -40,6 +40,13 @@ typedef struct
   gboolean m_isInstalled;
 } ApkdPackage;
 
+/**
+ * g_variant_to_apkd_package:
+ * @value_tuple: a GVariant, as received from apkd_helper_call*
+ *
+ * Convenience finction which conerts a GVariant we get pack from our DBus
+ * proxy to a ApkdPackage
+ **/
 static ApkdPackage
 g_variant_to_apkd_package (GVariant *value_tuple)
 {
@@ -63,6 +70,12 @@ g_variant_to_apkd_package (GVariant *value_tuple)
   return pkg;
 }
 
+/**
+ * apk_package_to_app:
+ * @pkg: A ApkPackage
+ *
+ * Convenience function which converts a ApkdPackage to a GsApp.
+ **/
 static GsApp *
 apk_package_to_app (ApkdPackage *pkg)
 {
@@ -100,6 +113,16 @@ apk_package_to_app (ApkdPackage *pkg)
   return app;
 }
 
+/**
+ * apk_progress_signal_connect_callback:
+ * @proxy: A GDBusProxy. Currently unused.
+ * @sender_name: The name of the sender.
+ * @signal_name: The name of the signal which we received.
+ * @parameters: The return value of the signal.
+ * @user_data: User data which we previously passed to g_signal_connect. It's our GsPlugin.
+ *
+ * Callback passed to g_signal_connect to update the current progress.
+ */
 static void
 apk_progress_signal_connect_callback (GDBusProxy *proxy,
                                       gchar *sender_name,
@@ -444,6 +467,18 @@ gs_plugin_adopt_app (GsPlugin *plugin, GsApp *app)
     }
 }
 
+/**
+ * resolve_appstream_source_file_to_package_name:
+ * @plugin: The apk GsPlugin.
+ * @app: The GsApp to resolve the appstream/desktop file for.
+ * @flags: TheGsPluginRefineFlags which determine what data we add.
+ * @cancellable: GCancellable to cancel resolving what app owns the appstream/desktop file.
+ * @error: GError which is set if something goes wrong.
+ *
+ * Check what apk package owns the desktop/appstream file from which the app was generated from
+ * by the desktop/appstream plugin. Add additional info to the package we have in our repos if we
+ * find a matching package installed on the system.
+ **/
 static gboolean
 resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
                                                GsApp *app,
@@ -514,9 +549,21 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
   return TRUE;
 }
 
+/**
+ * resolve_available_packages_app:
+ * @plugin: The apk GsPlugin.
+ * @arr: A GPtrArray of GsApps to check if they're in the apk repositores.
+ * @flags: TheGsPluginRefineFlags which determine what data we add.
+ * @cancellable: GCancellable to cancel resolving what app owns the appstream/desktop file.
+ * @error: GError which is set if something goes wrong.
+ *
+ * Try to find a package among all available packages which matches one of the apps specified in
+ * arr. This call is relatively expensive.
+ **/
 static gboolean
 resolve_available_packages_app (GsPlugin *plugin,
                                 GPtrArray *arr,
+                                GsPluginRefineFlags flags,
                                 GCancellable *cancellable,
                                 GError **error)
 {
@@ -651,7 +698,7 @@ gs_plugin_refine (GsPlugin *plugin,
        GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
        GS_PLUGIN_REFINE_FLAGS_DEFAULT))
     {
-      resolve_available_packages_app (plugin, not_found_app_arr, cancellable, NULL);
+      resolve_available_packages_app (plugin, not_found_app_arr, flags, cancellable, NULL);
     }
 
   return TRUE;
