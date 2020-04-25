@@ -141,6 +141,7 @@ gs_plugin_initialize (GsPlugin *plugin)
   GsPluginData *priv;
 
   gs_plugin_add_rule (plugin, GS_PLUGIN_RULE_RUN_BEFORE, "icons");
+  /* We want to get packages from appstream and refine them */
   gs_plugin_add_rule (plugin, GS_PLUGIN_RULE_RUN_AFTER, "appstream");
   gs_plugin_alloc_data (plugin, sizeof (GsPluginData));
   priv = gs_plugin_get_data (plugin);
@@ -152,6 +153,8 @@ gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
 {
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
+
+  g_debug ("Initializing plugin");
 
   priv->proxy = apkd_helper_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
                                                     G_DBUS_PROXY_FLAGS_NONE,
@@ -183,6 +186,8 @@ gs_plugin_refresh (GsPlugin *plugin,
   g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
   priv->current_app = app_dl;
 
+  g_debug ("Refreshing repositories");
+
   gs_app_set_summary_missing (app_dl, _ ("Getting apk repository indexes…"));
   gs_plugin_status_update (plugin, app_dl, GS_PLUGIN_STATUS_DOWNLOADING);
   if (apkd_helper_call_update_repositories_sync (priv->proxy, cancellable, &local_error))
@@ -211,12 +216,16 @@ gs_plugin_add_updates (GsPlugin *plugin,
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
+  g_debug ("Adding updates");
+
   if (!apkd_helper_call_list_upgradable_packages_sync (priv->proxy, &upgradable_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
+
+  g_debug ("Found %" G_GSIZE_FORMAT " upgradable packages", g_variant_n_children (upgradable_packages));
 
   for (gsize i = 0; i < g_variant_n_children (upgradable_packages); i++)
     {
@@ -245,12 +254,16 @@ gs_plugin_add_installed (GsPlugin *plugin,
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
+  g_debug ("Adding installed packages");
+
   if (!apkd_helper_call_list_installed_packages_sync (priv->proxy, &installed_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
+
+  g_debug ("Found %" G_GSIZE_FORMAT " installed packages", g_variant_n_children (installed_packages));
 
   for (gsize i = 0; i < g_variant_n_children (installed_packages); i++)
     {
@@ -276,6 +289,8 @@ gs_plugin_app_install (GsPlugin *plugin,
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
   const gchar *app_name[2];
+
+  g_debug ("Trying to install app %s", gs_app_get_unique_id (app));
 
   /* We can only install apps we know of */
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
@@ -310,6 +325,8 @@ gs_plugin_app_remove (GsPlugin *plugin,
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
   const gchar *app_name[2];
+
+  g_debug ("Trying to remove app %s", gs_app_get_unique_id (app));
 
   /* We can only remove apps we know of */
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
@@ -353,6 +370,8 @@ gs_plugin_add_search (GsPlugin *plugin,
       return FALSE;
     }
 
+  g_debug ("Got %" G_GSIZE_FORMAT " search results", g_variant_n_children (search_result));
+
   for (guint i = 0; i < g_variant_n_children (search_result); i++)
     {
       g_autoptr (GVariant) pkg_val = g_variant_get_child_value (search_result, i);
@@ -384,6 +403,8 @@ gs_plugin_update (GsPlugin *plugin,
       GsApp *app = gs_app_list_index (apps, i);
       priv->current_app = app;
 
+      g_debug ("Updating app %s", gs_app_get_unique_id (app));
+
       app_name[0] = gs_app_get_metadata_item (app, "apk::name");
       /* FIXME: Properly zero terminate the array */
       app_name[1] = '\0';
@@ -412,11 +433,13 @@ gs_plugin_adopt_app (GsPlugin *plugin, GsApp *app)
   if (gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_PACKAGE &&
       gs_app_get_scope (app) == AS_APP_SCOPE_SYSTEM)
     {
+      g_debug ("Adopted app %s", gs_app_get_unique_id (app));
       gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
     }
 
   if (gs_app_get_kind (app) == AS_APP_KIND_OS_UPGRADE)
     {
+      g_debug ("Adopted app %s", gs_app_get_unique_id (app));
       gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
     }
 }
@@ -433,6 +456,8 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
   gchar *fn;
   GsPluginData *priv = gs_plugin_get_data (plugin);
   const gchar *tmp = gs_app_get_id (app);
+
+  g_debug ("Trying to find desktop/appstream file for app %s", gs_app_get_unique_id (app));
 
   /* FIXME: Ideally we'd use gs_app_get_metadata("appstream::source-file") but apparently that's not realiable */
   /* Is there a desktop file ? */
@@ -464,6 +489,8 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
       g_set_error (error, GS_PLUGIN_ERROR, GS_PLUGIN_ERROR_FAILED, "No desktop or appstream file found for app %s", gs_app_get_unique_id (app));
       return FALSE;
     }
+
+  g_debug ("Found desktop/appstream file %s for app %s", fn, gs_app_get_unique_id (app));
 
   if (!apkd_helper_call_search_file_owner_sync (priv->proxy, fn, &search_result, cancellable, &local_error))
     {
@@ -524,6 +551,8 @@ resolve_available_packages_app (GsPlugin *plugin,
         {
           continue;
         }
+
+      g_debug ("Found matching apk package %s for app %s", pkg.m_name, gs_app_get_unique_id (app));
 
       if (gs_app_get_state (app) == AS_APP_STATE_UNKNOWN)
         {
