@@ -132,12 +132,19 @@ apk_progress_signal_connect_callback (GDBusProxy *proxy,
 {
   GsPluginData *priv = gs_plugin_get_data ((GsPlugin *) user_data);
   GsPluginStatus plugin_status = GS_PLUGIN_STATUS_DOWNLOADING;
-  uint percentage =
-      g_variant_get_uint32 (g_variant_get_child_value (parameters, 0));
+
+  /* We only act upon the progressNotification signal to set progress */
+  if (g_strcmp0 (signal_name, "progressNotification") != 0)
+    {
+      return;
+    }
 
   /* nothing in progress */
   if (priv->current_app != NULL)
     {
+      uint percentage =
+          g_variant_get_uint32 (g_variant_get_child_value (parameters, 0));
+
       g_debug ("apk percentage for %s: %u%%",
                gs_app_get_unique_id (priv->current_app), percentage);
       gs_app_set_progress (priv->current_app, percentage);
