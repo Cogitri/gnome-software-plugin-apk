@@ -475,6 +475,73 @@ gs_plugin_adopt_app (GsPlugin *plugin, GsApp *app)
 }
 
 /**
+ * set_app_metadata:
+ * @plugin: The apk GsPlugin.
+ * @app: The GsApp for which we want to set the metadata on.
+ * @package: The ApkdPackage to get the metadata from.
+ * @flags: The GsPluginRefineFlags which determine what metadata to set
+ *
+ * Helper function to set the right metadata items on an app.
+ **/
+static void
+set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRefineFlags flags)
+{
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION)
+    {
+      gs_app_set_version (app, package->m_version);
+    }
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN)
+    {
+      gs_app_set_origin (app, "alpine");
+    }
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION)
+    {
+      gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
+      gs_app_set_description (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
+    }
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE)
+    {
+      gs_app_set_size_download (app, package->m_size);
+      gs_app_set_size_installed (app, package->m_installedSize);
+    }
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL)
+    {
+      gs_app_set_url (app, GS_APP_QUALITY_UNKNOWN, package->m_url);
+    }
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE)
+    {
+      gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, package->m_license);
+    }
+  if (flags & GS_PLUGIN_REFINE_FLAGS_DEFAULT)
+    {
+      gs_app_set_version (app, package->m_version);
+      gs_app_set_origin (app, "alpine");
+      gs_app_set_description (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
+      gs_app_set_size_download (app, package->m_size);
+      gs_app_set_size_installed (app, package->m_installedSize);
+      gs_app_set_url (app, GS_APP_QUALITY_UNKNOWN, package->m_url);
+      gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, package->m_license);
+    }
+
+  if (gs_app_get_state (app) == AS_APP_STATE_UNKNOWN)
+    {
+      if (package->m_isInstalled)
+        {
+          gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+        }
+      else
+        {
+          gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+        }
+    }
+
+  gs_app_add_source (app, package->m_name);
+  gs_app_set_metadata (app, "apk::name", package->m_name);
+  gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
+  gs_app_set_bundle_kind (app, AS_BUNDLE_KIND_PACKAGE);
+}
+
+/**
  * resolve_appstream_source_file_to_package_name:
  * @plugin: The apk GsPlugin.
  * @app: The GsApp to resolve the appstream/desktop file for.
@@ -484,7 +551,7 @@ gs_plugin_adopt_app (GsPlugin *plugin, GsApp *app)
  *
  * Check what apk package owns the desktop/appstream file from which the app was generated from
  * by the desktop/appstream plugin. Add additional info to the package we have in our repos if we
- * find a matching package installed on the system.
+ * find a matching package installed on the system and adopt the package.
  **/
 static gboolean
 resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
@@ -544,14 +611,7 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
 
   ApkdPackage package = g_variant_to_apkd_package (search_result);
 
-  if (gs_app_get_source_default (app) == NULL)
-    {
-      gs_app_add_source (app, package.m_name);
-      gs_app_set_metadata (app, "apk::name", package.m_name);
-      gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
-      gs_app_set_bundle_kind (app, AS_BUNDLE_KIND_PACKAGE);
-      gs_app_set_size_installed (app, package.m_installedSize);
-    }
+  set_app_metadata (plugin, app, &package, flags);
 
   return TRUE;
 }
@@ -608,32 +668,7 @@ resolve_available_packages_app (GsPlugin *plugin,
 
       g_debug ("Found matching apk package %s for app %s", pkg.m_name, gs_app_get_unique_id (app));
 
-      if (gs_app_get_state (app) == AS_APP_STATE_UNKNOWN)
-        {
-          if (pkg.m_isInstalled)
-            {
-              gs_app_set_state (app, AS_APP_STATE_INSTALLED);
-            }
-          else
-            {
-              gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
-            }
-        }
-
-      if (gs_app_get_origin (app) == NULL)
-        {
-          gs_app_set_origin (app, "alpine");
-        }
-
-      // set more metadata for packages that don't have appstream data
-      gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, pkg.m_name);
-      gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, pkg.m_description);
-      gs_app_set_description (app, GS_APP_QUALITY_UNKNOWN, pkg.m_description);
-      gs_app_set_url (app, GS_APP_QUALITY_UNKNOWN, pkg.m_url);
-      gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, pkg.m_license);
-      gs_app_set_size_download (app, pkg.m_size);
-      gs_app_set_size_installed (app, pkg.m_installedSize);
-      gs_app_set_version (app, pkg.m_version);
+      set_app_metadata (plugin, app, &pkg, flags);
       return TRUE;
     }
 
