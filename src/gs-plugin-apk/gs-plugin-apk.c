@@ -563,6 +563,7 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
   gchar *fn;
   GsPluginData *priv = gs_plugin_get_data (plugin);
   const gchar *tmp = gs_app_get_id (app);
+  ApkdPackage package;
 
   g_debug ("Trying to find desktop/appstream file for app %s", gs_app_get_unique_id (app));
 
@@ -607,7 +608,7 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
       return FALSE;
     }
 
-  ApkdPackage package = g_variant_to_apkd_package (search_result);
+  package = g_variant_to_apkd_package (search_result);
 
   set_app_metadata (plugin, app, &package, flags);
 
