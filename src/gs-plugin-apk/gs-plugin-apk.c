@@ -79,7 +79,11 @@ g_variant_to_apkd_package (GVariant *value_tuple)
 static GsApp *
 apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
 {
-  GsApp *app;
+  GsApp *app = gs_plugin_cache_lookup (plugin, pkg->m_name);
+  if (app != NULL)
+    {
+      return app;
+    }
 
   app = gs_app_new (pkg->m_name);
 
@@ -109,6 +113,7 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
     {
       gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
     }
+  gs_plugin_cache_add (plugin, pkg->m_name, gs_app_get_unique_id (app));
 
   return app;
 }
