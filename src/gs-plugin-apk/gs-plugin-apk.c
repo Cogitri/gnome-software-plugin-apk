@@ -405,11 +405,6 @@ gs_plugin_add_search (GsPlugin *plugin,
       g_autoptr (GVariant) pkg_val = g_variant_get_child_value (search_result, i);
       ApkdPackage package = g_variant_to_apkd_package (pkg_val);
       g_autoptr (GsApp) app = apk_package_to_app (plugin, &package);
-      /*
-        FIXME: We currently can't tell if an app is a desktop app or not due to limitations
-        in apk and Software likes GENERIC apps, so let's just set all to AS_APP_KIND_DESKTOP
-      */
-      gs_app_set_kind (app, AS_APP_KIND_DESKTOP);
       gs_app_list_add (list, app);
     }
 
