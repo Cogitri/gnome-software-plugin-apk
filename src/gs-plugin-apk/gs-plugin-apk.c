@@ -91,7 +91,6 @@ apk_package_to_app (ApkdPackage *pkg)
   gs_app_set_version (app, pkg->m_oldVersion ? pkg->m_oldVersion : pkg->m_version);
   gs_app_set_update_version (app, pkg->m_version);
   gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, pkg->m_description);
-  gs_app_set_description (app, GS_APP_QUALITY_UNKNOWN, pkg->m_description);
   gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, pkg->m_url);
   gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, pkg->m_license);
   gs_app_set_origin (app, "alpine");
@@ -494,7 +493,6 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
   if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION)
     {
       gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
-      gs_app_set_description (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
     }
   if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE)
     {
@@ -513,7 +511,7 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
     {
       gs_app_set_version (app, package->m_version);
       gs_app_set_origin (app, "alpine");
-      gs_app_set_description (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
+      gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
       gs_app_set_size_download (app, package->m_size);
       gs_app_set_size_installed (app, package->m_installedSize);
       gs_app_set_url (app, GS_APP_QUALITY_UNKNOWN, package->m_url);
