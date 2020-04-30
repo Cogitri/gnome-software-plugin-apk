@@ -88,6 +88,7 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   app = gs_app_new (pkg->m_name);
 
   gs_app_set_kind (app, AS_APP_KIND_GENERIC);
+  gs_app_set_bundle_kind (app, AS_BUNDLE_KIND_PACKAGE);
   gs_app_set_scope (app, AS_APP_SCOPE_SYSTEM);
   gs_app_set_allow_cancel (app, FALSE);
   gs_app_add_source (app, pkg->m_name);
