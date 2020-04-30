@@ -77,7 +77,7 @@ g_variant_to_apkd_package (GVariant *value_tuple)
  * Convenience function which converts a ApkdPackage to a GsApp.
  **/
 static GsApp *
-apk_package_to_app (ApkdPackage *pkg)
+apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
 {
   GsApp *app;
 
@@ -100,6 +100,7 @@ apk_package_to_app (ApkdPackage *pkg)
   gs_app_set_size_installed (app, pkg->m_installedSize);
   gs_app_set_size_download (app, pkg->m_size);
   gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
+  gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
   if (pkg->m_isInstalled)
     {
       gs_app_set_state (app, AS_APP_STATE_INSTALLED);
@@ -264,7 +265,7 @@ gs_plugin_add_updates (GsPlugin *plugin,
 
       value_tuple = g_variant_get_child_value (upgradable_packages, i);
       pkg = g_variant_to_apkd_package (value_tuple);
-      app = apk_package_to_app (&pkg);
+      app = apk_package_to_app (plugin, &pkg);
       gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
       gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
       gs_app_list_add (list, app);
@@ -302,7 +303,7 @@ gs_plugin_add_installed (GsPlugin *plugin,
 
       value_tuple = g_variant_get_child_value (installed_packages, i);
       pkg = g_variant_to_apkd_package (value_tuple);
-      app = apk_package_to_app (&pkg);
+      app = apk_package_to_app (plugin, &pkg);
       gs_app_list_add (list, app);
     }
 
@@ -403,7 +404,7 @@ gs_plugin_add_search (GsPlugin *plugin,
     {
       g_autoptr (GVariant) pkg_val = g_variant_get_child_value (search_result, i);
       ApkdPackage package = g_variant_to_apkd_package (pkg_val);
-      g_autoptr (GsApp) app = apk_package_to_app (&package);
+      g_autoptr (GsApp) app = apk_package_to_app (plugin, &package);
       /*
         FIXME: We currently can't tell if an app is a desktop app or not due to limitations
         in apk and Software likes GENERIC apps, so let's just set all to AS_APP_KIND_DESKTOP
