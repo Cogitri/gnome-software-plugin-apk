@@ -105,6 +105,7 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   gs_app_set_size_download (app, pkg->m_size);
   gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
   gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
+  gs_app_set_metadata (app, "GnomeSoftware::PackagingFormat", "apk");
   if (pkg->m_isInstalled)
     {
       gs_app_set_state (app, AS_APP_STATE_INSTALLED);
