@@ -633,27 +633,27 @@ resolve_available_packages_app (GsPlugin *plugin,
                                 GCancellable *cancellable,
                                 GError **error)
 {
-  g_autoptr (GVariant) installed_packages = NULL;
+  g_autoptr (GVariant) available_packages = NULL;
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
-  if (!apkd_helper_call_list_installed_packages_sync (priv->proxy, &installed_packages, cancellable, &local_error))
+  if (!apkd_helper_call_list_available_packages_sync (priv->proxy, &available_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
-  for (guint i = 0; i < g_variant_n_children (installed_packages); i++)
+  for (guint i = 0; i < g_variant_n_children (available_packages); i++)
     {
       g_autoptr (GsApp) app = NULL;
-      g_autoptr (GVariant) value_tuple = g_variant_get_child_value (installed_packages, i);
+      g_autoptr (GVariant) value_tuple = g_variant_get_child_value (available_packages, i);
       ApkdPackage pkg = g_variant_to_apkd_package (value_tuple);
 
       for (guint j = 0; j < arr->len; j++)
         {
           GsApp *potential_match = g_ptr_array_index (arr, j);
-          if (pkg.m_name == gs_app_get_source_default (potential_match))
+          if (g_strcmp0 (pkg.m_name, gs_app_get_source_default (potential_match)) == 0)
             {
               app = potential_match;
               break;
@@ -730,16 +730,23 @@ gs_plugin_refine (GsPlugin *plugin,
     }
 
   if (flags &
-      (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
-       GS_PLUGIN_REFINE_FLAGS_DEFAULT))
+          (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
+           GS_PLUGIN_REFINE_FLAGS_DEFAULT) &&
+      not_found_app_arr->len > 0)
     {
-      resolve_available_packages_app (plugin, not_found_app_arr, flags, cancellable, NULL);
+      g_autoptr (GError) resolve_error = NULL;
+      gboolean res = resolve_available_packages_app (plugin, not_found_app_arr, flags, cancellable, &resolve_error);
+      if (!res)
+        {
+          g_propagate_error (error, g_steal_pointer (&resolve_error));
+          return FALSE;
+        }
     }
 
   return TRUE;
