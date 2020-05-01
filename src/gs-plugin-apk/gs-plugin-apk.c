@@ -275,7 +275,7 @@ gs_plugin_add_updates (GsPlugin *plugin,
       app = apk_package_to_app (plugin, &pkg);
       gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
       gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
-      gs_app_list_add (list, app);
+      gs_app_list_add (list, g_steal_pointer (&app));
     }
 
   return TRUE;
@@ -311,7 +311,7 @@ gs_plugin_add_installed (GsPlugin *plugin,
       value_tuple = g_variant_get_child_value (installed_packages, i);
       pkg = g_variant_to_apkd_package (value_tuple);
       app = apk_package_to_app (plugin, &pkg);
-      gs_app_list_add (list, app);
+      gs_app_list_add (list, g_steal_pointer (&app));
     }
 
   return TRUE;
@@ -412,7 +412,7 @@ gs_plugin_add_search (GsPlugin *plugin,
       g_autoptr (GVariant) pkg_val = g_variant_get_child_value (search_result, i);
       ApkdPackage package = g_variant_to_apkd_package (pkg_val);
       g_autoptr (GsApp) app = apk_package_to_app (plugin, &package);
-      gs_app_list_add (list, app);
+      gs_app_list_add (list, g_steal_pointer (&app));
     }
 
   return TRUE;
@@ -583,7 +583,6 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
       fn = g_strdup_printf ("/usr/share/metainfo/%s.metainfo.xml", tmp);
       if (!g_file_test (fn, G_FILE_TEST_EXISTS))
         {
-          g_free (fn);
           fn = g_strdup_printf ("/usr/share/metainfo/%s.appdata.xml", tmp);
           if (!g_file_test (fn, G_FILE_TEST_EXISTS))
             {
