@@ -645,7 +645,7 @@ resolve_available_packages_app (GsPlugin *plugin,
 
   for (guint i = 0; i < g_variant_n_children (available_packages); i++)
     {
-      g_autoptr (GsApp) app = NULL;
+      GsApp *app = NULL;
       g_autoptr (GVariant) value_tuple = g_variant_get_child_value (available_packages, i);
       ApkdPackage pkg = g_variant_to_apkd_package (value_tuple);
 
