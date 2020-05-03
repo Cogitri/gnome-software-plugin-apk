@@ -282,42 +282,6 @@ gs_plugin_add_updates (GsPlugin *plugin,
 }
 
 gboolean
-gs_plugin_add_installed (GsPlugin *plugin,
-                         GsAppList *list,
-                         GCancellable *cancellable,
-                         GError **error)
-{
-  g_autoptr (GVariant) installed_packages = NULL;
-  g_autoptr (GError) local_error = NULL;
-  GsPluginData *priv = gs_plugin_get_data (plugin);
-
-  g_debug ("Adding installed packages");
-
-  if (!apkd_helper_call_list_installed_packages_sync (priv->proxy, &installed_packages, cancellable, &local_error))
-    {
-      g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
-      return FALSE;
-    }
-
-  g_debug ("Found %" G_GSIZE_FORMAT " installed packages", g_variant_n_children (installed_packages));
-
-  for (gsize i = 0; i < g_variant_n_children (installed_packages); i++)
-    {
-      g_autoptr (GsApp) app = NULL;
-      g_autoptr (GVariant) value_tuple = NULL;
-      ApkdPackage pkg;
-
-      value_tuple = g_variant_get_child_value (installed_packages, i);
-      pkg = g_variant_to_apkd_package (value_tuple);
-      app = apk_package_to_app (plugin, &pkg);
-      gs_app_list_add (list, g_steal_pointer (&app));
-    }
-
-  return TRUE;
-}
-
-gboolean
 gs_plugin_app_install (GsPlugin *plugin,
                        GsApp *app,
                        GCancellable *cancellable,
@@ -384,37 +348,6 @@ gs_plugin_app_remove (GsPlugin *plugin,
 
   gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
   priv->current_app = NULL;
-  return TRUE;
-}
-
-gboolean
-gs_plugin_add_search (GsPlugin *plugin,
-                      gchar **values,
-                      GsAppList *list,
-                      GCancellable *cancellable,
-                      GError **error)
-{
-  g_autoptr (GError) local_error = NULL;
-  g_autoptr (GVariant) search_result = NULL;
-  GsPluginData *priv = gs_plugin_get_data (plugin);
-
-  if (!apkd_helper_call_search_package_names_sync (priv->proxy, (const gchar *const *) values, &search_result, cancellable, &local_error))
-    {
-      g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
-      return FALSE;
-    }
-
-  g_debug ("Got %" G_GSIZE_FORMAT " search results", g_variant_n_children (search_result));
-
-  for (guint i = 0; i < g_variant_n_children (search_result); i++)
-    {
-      g_autoptr (GVariant) pkg_val = g_variant_get_child_value (search_result, i);
-      ApkdPackage package = g_variant_to_apkd_package (pkg_val);
-      g_autoptr (GsApp) app = apk_package_to_app (plugin, &package);
-      gs_app_list_add (list, g_steal_pointer (&app));
-    }
-
   return TRUE;
 }
 
