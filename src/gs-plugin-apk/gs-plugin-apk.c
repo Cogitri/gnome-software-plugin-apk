@@ -615,7 +615,7 @@ gs_plugin_refine (GsPlugin *plugin,
                   GError **error)
 {
   g_autoptr (GError) local_error = NULL;
-  g_autoptr (GPtrArray) not_found_app_arr = g_ptr_array_new ();
+  g_autoptr (GPtrArray) not_found_app_arr = g_ptr_array_new_with_free_func (g_object_unref);
 
   g_debug ("Starting refinining process");
 
@@ -658,7 +658,7 @@ gs_plugin_refine (GsPlugin *plugin,
           continue;
         }
 
-      g_ptr_array_add (not_found_app_arr, app);
+      g_ptr_array_add (not_found_app_arr, g_object_ref (app));
     }
 
   if (flags &
