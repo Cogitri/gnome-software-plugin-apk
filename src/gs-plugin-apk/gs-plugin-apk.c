@@ -26,17 +26,11 @@ typedef struct
   const gchar *m_name;
   const gchar *m_version;
   const gchar *m_oldVersion;
-  const gchar *m_arch;
   const gchar *m_license;
-  const gchar *m_origin;
-  const gchar *m_maintainer;
   const gchar *m_url;
   const gchar *m_description;
-  const gchar *m_commit;
-  const gchar *m_filename;
   gulong m_installedSize;
   gulong m_size;
-  glong m_buildTime;
   gboolean m_isInstalled;
 } ApkdPackage;
 
@@ -57,15 +51,9 @@ g_variant_to_apkd_package (GVariant *value_tuple)
     g_variant_get_string (g_variant_get_child_value (value_tuple, 3), NULL),
     g_variant_get_string (g_variant_get_child_value (value_tuple, 4), NULL),
     g_variant_get_string (g_variant_get_child_value (value_tuple, 5), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 6), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 7), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 8), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 9), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 10), NULL),
-    g_variant_get_uint64 (g_variant_get_child_value (value_tuple, 11)),
-    g_variant_get_uint64 (g_variant_get_child_value (value_tuple, 12)),
-    g_variant_get_int64 (g_variant_get_child_value (value_tuple, 13)),
-    g_variant_get_boolean (g_variant_get_child_value (value_tuple, 14)),
+    g_variant_get_uint64 (g_variant_get_child_value (value_tuple, 6)),
+    g_variant_get_uint64 (g_variant_get_child_value (value_tuple, 7)),
+    g_variant_get_boolean (g_variant_get_child_value (value_tuple, 8)),
   };
   return pkg;
 }
