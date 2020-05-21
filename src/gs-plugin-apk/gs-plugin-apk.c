@@ -195,6 +195,9 @@ gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
       return FALSE;
     }
 
+  // FIXME: Instead of disabling the timeout here, apkd should have an async API.
+  g_dbus_proxy_set_default_timeout (G_DBUS_PROXY (priv->proxy), G_MAXINT);
+
   g_signal_connect (priv->proxy, "g-signal", G_CALLBACK (apk_progress_signal_connect_callback), plugin);
 
   return TRUE;
