@@ -288,10 +288,25 @@ gs_plugin_app_install (GsPlugin *plugin,
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
     return TRUE;
 
+  gs_app_set_state (app, AS_APP_STATE_INSTALLING);
+
+  if (gs_app_get_kind (app) == AS_APP_KIND_SOURCE)
+    {
+      if (!apkd_helper_call_add_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
+        {
+          g_dbus_error_strip_remote_error (local_error);
+          g_propagate_error (error, g_steal_pointer (&local_error));
+          gs_app_set_state_recover (app);
+          return FALSE;
+        }
+
+      gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+      return TRUE;
+    }
+
   priv->current_app = app;
   app_name[0] = gs_app_get_metadata_item (app, "apk::name");
   app_name[1] = NULL;
-  gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
   if (!apkd_helper_call_add_packages_sync (priv->proxy, app_name, cancellable, &local_error))
     {
@@ -323,10 +338,25 @@ gs_plugin_app_remove (GsPlugin *plugin,
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
     return TRUE;
 
+  gs_app_set_state (app, AS_APP_STATE_REMOVING);
+
+  if (gs_app_get_kind (app) == AS_APP_KIND_SOURCE)
+    {
+      if (!apkd_helper_call_remove_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
+        {
+          g_dbus_error_strip_remote_error (local_error);
+          g_propagate_error (error, g_steal_pointer (&local_error));
+          gs_app_set_state_recover (app);
+          return FALSE;
+        }
+
+      gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+      return TRUE;
+    }
+
   priv->current_app = app;
   app_name[0] = gs_app_get_metadata_item (app, "apk::name");
   app_name[1] = NULL;
-  gs_app_set_state (app, AS_APP_STATE_REMOVING);
 
   if (!apkd_helper_call_delete_packages_sync (priv->proxy, app_name, cancellable, &local_error))
     {
@@ -614,7 +644,7 @@ gs_plugin_refine (GsPlugin *plugin,
     {
       GsApp *app = gs_app_list_index (apps, i);
 
-      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD))
+      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD) || gs_app_get_kind (app) & AS_APP_KIND_SOURCE)
         continue;
 
       /* set management plugin for apps where appstream just added the source package name in refine() */
@@ -670,6 +700,94 @@ gs_plugin_refine (GsPlugin *plugin,
           g_propagate_error (error, g_steal_pointer (&resolve_error));
           return FALSE;
         }
+    }
+
+  return TRUE;
+}
+
+gboolean
+gs_plugin_add_sources (GsPlugin *plugin,
+                       GsAppList *list,
+                       GCancellable *cancellable,
+                       GError **error)
+{
+  g_autoptr (GVariant) repositories = NULL;
+  g_autoptr (GError) local_error = NULL;
+  GsPluginData *priv = gs_plugin_get_data (plugin);
+
+  g_debug ("Adding repositories");
+
+  if (!apkd_helper_call_list_repositories_sync (priv->proxy, &repositories, cancellable, &local_error))
+    {
+      g_dbus_error_strip_remote_error (local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
+      return FALSE;
+    }
+
+  for (gsize i = 0; i < g_variant_n_children (repositories); i++)
+    {
+      g_autofree gchar *description = NULL;
+      g_autofree gchar *id = NULL;
+      g_autofree gchar *repo_displayname = NULL;
+      g_autofree gchar **repo_name = NULL;
+      g_autofree gchar *url = NULL;
+      g_autoptr (GsApp) app = NULL;
+      g_autoptr (GVariant) value_tuple = NULL;
+      gboolean enabled = FALSE;
+      gsize len;
+
+      value_tuple = g_variant_get_child_value (repositories, i);
+      enabled = g_variant_get_boolean (g_variant_get_child_value (value_tuple, 0));
+      description = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 1), &len));
+      url = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 2), &len));
+      repo_name = g_strsplit (url, "/", -1);
+      len = g_strv_length (repo_name);
+
+      /* create something that we can use to enable/disable */
+      switch (len)
+        {
+        case 0:
+          id = g_strdup_printf ("org.alpinelinux.%s.repo.%s", url, enabled ? "enabled" : "disabled");
+        case 1:
+          g_strdup_printf ("org.alpinelinux.%s.repo.%s", repo_name[0], enabled ? "enabled" : "disabled");
+        default:
+          id = g_strdup_printf ("org.alpinelinux.%s-%s.repo.%s", repo_name[len - 2], repo_name[len - 1], enabled ? "enabled" : "disabled");
+        }
+
+      if (strstr (url, "http") == NULL)
+        {
+          if (len > 1)
+            {
+              repo_displayname = g_strdup_printf (_ ("Local repository %s/%s"), repo_name[len - 2], repo_name[len - 1]);
+            }
+          else
+            {
+              repo_displayname = _ ("Local repository");
+            }
+        }
+      else
+        {
+          if (len > 1)
+            {
+              repo_displayname = g_strdup_printf (_ ("Remote repository %s (branch: %s)"), repo_name[len - 1], repo_name[len - 2]);
+            }
+          else
+            {
+              repo_displayname = _ ("Remote repository");
+            }
+        }
+
+      app = gs_app_new (id);
+      gs_app_set_kind (app, AS_APP_KIND_SOURCE);
+      gs_app_set_scope (app, AS_APP_SCOPE_SYSTEM);
+      gs_app_set_state (app, enabled ? AS_APP_STATE_INSTALLED : AS_APP_STATE_AVAILABLE);
+      gs_app_add_quirk (app, GS_APP_QUIRK_NOT_LAUNCHABLE);
+      gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, repo_displayname);
+      gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, description);
+      gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, url);
+      gs_app_set_metadata (app, "apk::repo-url", url);
+      gs_app_set_management_plugin (app, "apk");
+      gs_app_list_add (list, g_steal_pointer (&app));
     }
 
   return TRUE;
