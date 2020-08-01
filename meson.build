@@ -20,3 +20,8 @@ shared_library(
   c_args : cargs,
   dependencies : [ gnome_software_dep, apk_dep ],
 )
+
+install_data(
+  'data/org.gnome.Software.Plugin.Apk.metainfo.xml',
+  install_dir: join_paths(get_option('datadir'), 'metainfo'),
+)
