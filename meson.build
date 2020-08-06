@@ -10,7 +10,7 @@ plugin_install_dir = gnome_software_dep.get_pkgconfig_variable('plugindir')
 
 cargs = ['-DG_LOG_DOMAIN="GsPluginApk"', '-DI_KNOW_THE_GNOME_SOFTWARE_API_IS_SUBJECT_TO_CHANGE']
 
-apk_dep = dependency('apkd-dbus-client-0')
+apk_dep = dependency('apk-polkit-client-1')
 
 shared_library(
   'gs_plugin_apk',
