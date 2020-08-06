@@ -2,10 +2,10 @@
  *
  * Copyright (C) 2020 Rasmus Thomsen <oss@cogitri.dev>
  *
- * SPDX-License-Identifier: GPL-2.0+
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#include <apk-polkit/apkd-dbus-client.h>
+#include <apk-polkit-1/apk-polkit-client.h>
 #include <gnome-software.h>
 #include <libintl.h>
 #include <locale.h>
@@ -18,7 +18,7 @@
 struct GsPluginData
 {
   GsApp *current_app;
-  ApkdHelper *proxy;
+  ApkPolkit1 *proxy;
 };
 
 typedef struct
@@ -36,7 +36,7 @@ typedef struct
 
 /**
  * g_variant_to_apkd_package:
- * @value_tuple: a GVariant, as received from apkd_helper_call*
+ * @value_tuple: a GVariant, as received from apk_polkit1_call*
  *
  * Convenience finction which conerts a GVariant we get pack from our DBus
  * proxy to a ApkdPackage
@@ -181,10 +181,10 @@ gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
 
   g_debug ("Initializing plugin");
 
-  priv->proxy = apkd_helper_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+  priv->proxy = apk_polkit1_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
                                                     G_DBUS_PROXY_FLAGS_NONE,
-                                                    "dev.Cogitri.apkPolkit.Helper",
-                                                    "/dev/Cogitri/apkPolkit/Helper",
+                                                    "dev.Cogitri.apkPolkit1",
+                                                    "/dev/Cogitri/apkPolkit1",
                                                     cancellable,
                                                     &local_error);
 
@@ -218,7 +218,7 @@ gs_plugin_refresh (GsPlugin *plugin,
 
   gs_app_set_summary_missing (app_dl, _ ("Getting apk repository indexes…"));
   gs_plugin_status_update (plugin, app_dl, GS_PLUGIN_STATUS_DOWNLOADING);
-  if (apkd_helper_call_update_repositories_sync (priv->proxy, cancellable, &local_error))
+  if (apk_polkit1_call_update_repositories_sync (priv->proxy, cancellable, &local_error))
     {
       gs_app_set_progress (app_dl, 100);
       priv->current_app = NULL;
@@ -246,7 +246,7 @@ gs_plugin_add_updates (GsPlugin *plugin,
 
   g_debug ("Adding updates");
 
-  if (!apkd_helper_call_list_upgradable_packages_sync (priv->proxy, &upgradable_packages, cancellable, &local_error))
+  if (!apk_polkit1_call_list_upgradable_packages_sync (priv->proxy, &upgradable_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -280,7 +280,6 @@ gs_plugin_app_install (GsPlugin *plugin,
 {
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
-  const gchar *app_name[2];
 
   g_debug ("Trying to install app %s", gs_app_get_unique_id (app));
 
@@ -292,7 +291,7 @@ gs_plugin_app_install (GsPlugin *plugin,
 
   if (gs_app_get_kind (app) == AS_APP_KIND_SOURCE)
     {
-      if (!apkd_helper_call_add_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
+      if (!apk_polkit1_call_add_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
         {
           g_dbus_error_strip_remote_error (local_error);
           g_propagate_error (error, g_steal_pointer (&local_error));
@@ -305,10 +304,8 @@ gs_plugin_app_install (GsPlugin *plugin,
     }
 
   priv->current_app = app;
-  app_name[0] = gs_app_get_metadata_item (app, "apk::name");
-  app_name[1] = NULL;
 
-  if (!apkd_helper_call_add_packages_sync (priv->proxy, app_name, cancellable, &local_error))
+  if (!apk_polkit1_call_add_package_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::name"), cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -330,7 +327,6 @@ gs_plugin_app_remove (GsPlugin *plugin,
 {
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
-  const gchar *app_name[2];
 
   g_debug ("Trying to remove app %s", gs_app_get_unique_id (app));
 
@@ -342,7 +338,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
 
   if (gs_app_get_kind (app) == AS_APP_KIND_SOURCE)
     {
-      if (!apkd_helper_call_remove_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
+      if (!apk_polkit1_call_remove_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
         {
           g_dbus_error_strip_remote_error (local_error);
           g_propagate_error (error, g_steal_pointer (&local_error));
@@ -355,10 +351,8 @@ gs_plugin_app_remove (GsPlugin *plugin,
     }
 
   priv->current_app = app;
-  app_name[0] = gs_app_get_metadata_item (app, "apk::name");
-  app_name[1] = NULL;
 
-  if (!apkd_helper_call_delete_packages_sync (priv->proxy, app_name, cancellable, &local_error))
+  if (!apk_polkit1_call_delete_package_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::name"), cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -383,17 +377,14 @@ gs_plugin_update (GsPlugin *plugin,
 
   for (guint i = 0; i < gs_app_list_length (apps); i++)
     {
-      const gchar *app_name[2];
       GsApp *app = gs_app_list_index (apps, i);
       priv->current_app = app;
 
       g_debug ("Updating app %s", gs_app_get_unique_id (app));
 
-      app_name[0] = gs_app_get_metadata_item (app, "apk::name");
-      app_name[1] = NULL;
       gs_app_set_state (app, AS_APP_STATE_INSTALLING);
 
-      if (!apkd_helper_call_upgrade_packages_sync (priv->proxy, app_name, cancellable, &local_error))
+      if (!apk_polkit1_call_upgrade_package_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::name"), cancellable, &local_error))
         {
           g_dbus_error_strip_remote_error (local_error);
           g_propagate_error (error, g_steal_pointer (&local_error));
@@ -553,7 +544,7 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
 
   g_debug ("Found desktop/appstream file %s for app %s", fn, gs_app_get_unique_id (app));
 
-  if (!apkd_helper_call_search_file_owner_sync (priv->proxy, fn, &search_result, cancellable, &local_error))
+  if (!apk_polkit1_call_search_file_owner_sync (priv->proxy, fn, &search_result, cancellable, &local_error))
     {
       g_warning ("Couldn't find any matches for appdata file");
       g_dbus_error_strip_remote_error (local_error);
@@ -561,7 +552,7 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
       return FALSE;
     }
 
-  package = g_variant_to_apkd_package (search_result);
+  package = g_variant_to_apkd_package (g_variant_get_child_value (search_result, 0));
 
   set_app_metadata (plugin, app, &package, flags);
 
@@ -590,7 +581,7 @@ resolve_available_packages_app (GsPlugin *plugin,
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
-  if (!apkd_helper_call_list_available_packages_sync (priv->proxy, &available_packages, cancellable, &local_error))
+  if (!apk_polkit1_call_list_available_packages_sync (priv->proxy, &available_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -717,7 +708,7 @@ gs_plugin_add_sources (GsPlugin *plugin,
 
   g_debug ("Adding repositories");
 
-  if (!apkd_helper_call_list_repositories_sync (priv->proxy, &repositories, cancellable, &local_error))
+  if (!apk_polkit1_call_list_repositories_sync (priv->proxy, &repositories, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
