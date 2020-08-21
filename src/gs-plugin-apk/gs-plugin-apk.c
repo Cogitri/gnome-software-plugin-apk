@@ -560,63 +560,40 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
 }
 
 /**
- * resolve_available_packages_app:
+ * resolve_matching_package:
  * @plugin: The apk GsPlugin.
- * @arr: A GPtrArray of GsApps to check if they're in the apk repositores.
+ * @app: The app which we try to refine.
  * @flags: TheGsPluginRefineFlags which determine what data we add.
  * @cancellable: GCancellable to cancel resolving what app owns the appstream/desktop file.
  * @error: GError which is set if something goes wrong.
  *
- * Try to find a package among all available packages which matches one of the apps specified in
- * arr. This call is relatively expensive.
+ * Try to find a package among all available packages which matches the specified app and
+ * refine it with additional info apk provides.
  **/
 static gboolean
-resolve_available_packages_app (GsPlugin *plugin,
-                                GPtrArray *arr,
-                                GsPluginRefineFlags flags,
-                                GCancellable *cancellable,
-                                GError **error)
+resolve_matching_package (GsPlugin *plugin,
+                          GsApp *app,
+                          GsPluginRefineFlags flags,
+                          GCancellable *cancellable,
+                          GError **error)
 {
-  g_autoptr (GVariant) available_packages = NULL;
+  g_autoptr (GVariant) matching_packages = NULL;
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
-  if (!apk_polkit1_call_list_available_packages_sync (priv->proxy, &available_packages, cancellable, &local_error))
+  if (!apk_polkit1_call_get_package_details_sync (priv->proxy, gs_app_get_source_default (app), &matching_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
-  for (guint i = 0; i < g_variant_n_children (available_packages); i++)
-    {
-      GsApp *app = NULL;
-      g_autoptr (GVariant) value_tuple = g_variant_get_child_value (available_packages, i);
-      ApkdPackage pkg = g_variant_to_apkd_package (value_tuple);
+  ApkdPackage pkg = g_variant_to_apkd_package (g_variant_get_child_value (matching_packages, 0));
 
-      for (guint j = 0; j < arr->len; j++)
-        {
-          GsApp *potential_match = g_ptr_array_index (arr, j);
-          if (g_strcmp0 (pkg.m_name, gs_app_get_source_default (potential_match)) == 0)
-            {
-              app = potential_match;
-              break;
-            }
-        }
+  g_debug ("Found matching apk package %s for app %s", pkg.m_name, gs_app_get_unique_id (app));
 
-      if (app == NULL)
-        {
-          continue;
-        }
-
-      g_debug ("Found matching apk package %s for app %s", pkg.m_name, gs_app_get_unique_id (app));
-
-      set_app_metadata (plugin, app, &pkg, flags);
-      return TRUE;
-    }
-
-  g_set_error_literal (error, GS_PLUGIN_ERROR, GS_PLUGIN_ERROR_FAILED, _ ("No app found to refine"));
-  return FALSE;
+  set_app_metadata (plugin, app, &pkg, flags);
+  return TRUE;
 }
 
 gboolean
@@ -670,26 +647,22 @@ gs_plugin_refine (GsPlugin *plugin,
           continue;
         }
 
-      g_ptr_array_add (not_found_app_arr, g_object_ref (app));
-    }
-
-  if (flags &
-          (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
-           GS_PLUGIN_REFINE_FLAGS_DEFAULT) &&
-      not_found_app_arr->len > 0)
-    {
-      g_autoptr (GError) resolve_error = NULL;
-      gboolean res = resolve_available_packages_app (plugin, not_found_app_arr, flags, cancellable, &resolve_error);
-      if (!res)
+      if (flags &
+              (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
+               GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
+               GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
+               GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
+               GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
+               GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
+               GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
+               GS_PLUGIN_REFINE_FLAGS_DEFAULT) &&
+          not_found_app_arr->len > 0)
         {
-          g_propagate_error (error, g_steal_pointer (&resolve_error));
-          return FALSE;
+          if (!resolve_matching_package (plugin, app, flags, cancellable, &local_error))
+            {
+              g_propagate_error (error, g_steal_pointer (&local_error));
+              return FALSE;
+            }
         }
     }
 
