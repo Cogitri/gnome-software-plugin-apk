@@ -552,7 +552,7 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
       return FALSE;
     }
 
-  package = g_variant_to_apkd_package (g_variant_get_child_value (search_result, 0));
+  package = g_variant_to_apkd_package (search_result);
 
   set_app_metadata (plugin, app, &package, flags);
 
@@ -577,18 +577,18 @@ resolve_matching_package (GsPlugin *plugin,
                           GCancellable *cancellable,
                           GError **error)
 {
-  g_autoptr (GVariant) matching_packages = NULL;
+  g_autoptr (GVariant) matching_package = NULL;
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
-  if (!apk_polkit1_call_get_package_details_sync (priv->proxy, gs_app_get_source_default (app), &matching_packages, cancellable, &local_error))
+  if (!apk_polkit1_call_get_package_details_sync (priv->proxy, gs_app_get_source_default (app), &matching_package, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
-  ApkdPackage pkg = g_variant_to_apkd_package (g_variant_get_child_value (matching_packages, 0));
+  ApkdPackage pkg = g_variant_to_apkd_package (matching_package);
 
   g_debug ("Found matching apk package %s for app %s", pkg.m_name, gs_app_get_unique_id (app));
 
