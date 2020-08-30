@@ -21,6 +21,15 @@ struct GsPluginData
   ApkPolkit1 *proxy;
 };
 
+typedef enum _ApkPackageState
+{
+  Available,
+  Installed,
+  PendingInstall,
+  PendingRemoval,
+  Upgradable,
+} ApkPackageState;
+
 typedef struct
 {
   const gchar *m_name;
@@ -31,7 +40,7 @@ typedef struct
   const gchar *m_description;
   gulong m_installedSize;
   gulong m_size;
-  gboolean m_isInstalled;
+  ApkPackageState m_packageState;
 } ApkdPackage;
 
 /**
@@ -53,7 +62,7 @@ g_variant_to_apkd_package (GVariant *value_tuple)
     g_variant_get_string (g_variant_get_child_value (value_tuple, 5), NULL),
     g_variant_get_uint64 (g_variant_get_child_value (value_tuple, 6)),
     g_variant_get_uint64 (g_variant_get_child_value (value_tuple, 7)),
-    g_variant_get_boolean (g_variant_get_child_value (value_tuple, 8)),
+    g_variant_get_uint32 (g_variant_get_child_value (value_tuple, 8)),
   };
   return pkg;
 }
@@ -81,8 +90,6 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   gs_app_set_allow_cancel (app, FALSE);
   gs_app_add_source (app, pkg->m_name);
   gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, pkg->m_name);
-  gs_app_set_version (app, pkg->m_oldVersion ? pkg->m_oldVersion : pkg->m_version);
-  gs_app_set_update_version (app, pkg->m_version);
   gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, pkg->m_description);
   gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, pkg->m_url);
   gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, pkg->m_license);
@@ -95,13 +102,24 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
   gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
   gs_app_set_metadata (app, "GnomeSoftware::PackagingFormat", "apk");
-  if (pkg->m_isInstalled)
+  switch (pkg->m_packageState)
     {
+    case Installed:
+    case PendingRemoval:
       gs_app_set_state (app, AS_APP_STATE_INSTALLED);
-    }
-  else
-    {
+      gs_app_set_version (app, pkg->m_version);
+      break;
+    case PendingInstall:
+    case Available:
       gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+      gs_app_set_version (app, pkg->m_version);
+      break;
+    case Upgradable:
+      gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
+      gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
+      gs_app_set_version (app, pkg->m_oldVersion);
+      gs_app_set_update_version (app, pkg->m_version);
+      break;
     }
   gs_plugin_cache_add (plugin, g_strdup_printf ("%s-%s", pkg->m_name, pkg->m_version), app);
 
@@ -264,8 +282,6 @@ gs_plugin_add_updates (GsPlugin *plugin,
       value_tuple = g_variant_get_child_value (upgradable_packages, i);
       pkg = g_variant_to_apkd_package (value_tuple);
       app = apk_package_to_app (plugin, &pkg);
-      gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
-      gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
       gs_app_list_add (list, g_steal_pointer (&app));
     }
 
@@ -465,17 +481,20 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
       gs_app_set_url (app, GS_APP_QUALITY_UNKNOWN, package->m_url);
       gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, package->m_license);
     }
-
-  if (gs_app_get_state (app) == AS_APP_STATE_UNKNOWN)
+  switch (package->m_packageState)
     {
-      if (package->m_isInstalled)
-        {
-          gs_app_set_state (app, AS_APP_STATE_INSTALLED);
-        }
-      else
-        {
-          gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
-        }
+    case Installed:
+    case PendingRemoval:
+      gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+      break;
+    case PendingInstall:
+    case Available:
+      gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+      break;
+    case Upgradable:
+      gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
+      gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
+      break;
     }
 
   gs_app_add_source (app, package->m_name);
