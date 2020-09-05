@@ -281,25 +281,11 @@ gs_plugin_add_updates (GsPlugin *plugin,
 
       value_tuple = g_variant_get_child_value (upgradable_packages, i);
       pkg = g_variant_to_apkd_package (value_tuple);
-      app = apk_package_to_app (plugin, &pkg);
-      switch (pkg.m_packageState)
+      if (pkg.m_packageState == Upgradable)
         {
-        case PendingInstall:
-          gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
-          gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
-          gs_app_set_version (app, 0);
-          gs_app_set_update_version (app, pkg.m_version);
-          break;
-        case PendingRemoval:
-          gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
-          gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
-          gs_app_set_version (app, pkg.m_version);
-          gs_app_set_update_version (app, 0);
-          break;
-        default:
-          break;
+          app = apk_package_to_app (plugin, &pkg);
+          gs_app_list_add (list, g_steal_pointer (&app));
         }
-      gs_app_list_add (list, g_steal_pointer (&app));
     }
 
   return TRUE;
