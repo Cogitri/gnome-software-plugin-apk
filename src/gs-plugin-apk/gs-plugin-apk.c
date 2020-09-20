@@ -484,6 +484,7 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
       gs_app_set_url (app, GS_APP_QUALITY_UNKNOWN, package->m_url);
       gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, package->m_license);
     }
+  g_debug ("State for pkg %s: %d", gs_app_get_unique_id (app), package->m_packageState);
   switch (package->m_packageState)
     {
     case Installed:
@@ -626,7 +627,6 @@ gs_plugin_refine (GsPlugin *plugin,
                   GError **error)
 {
   g_autoptr (GError) local_error = NULL;
-  g_autoptr (GPtrArray) not_found_app_arr = g_ptr_array_new_with_free_func (g_object_unref);
 
   g_debug ("Starting refinining process");
 
@@ -635,7 +635,10 @@ gs_plugin_refine (GsPlugin *plugin,
       GsApp *app = gs_app_list_index (apps, i);
 
       if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD) || gs_app_get_kind (app) & AS_APP_KIND_SOURCE)
-        continue;
+        {
+          g_debug ("App %s has quirk WILDCARD or is of SOURCE kind; skipping!", gs_app_get_unique_id (app));
+          continue;
+        }
 
       /* set management plugin for apps where appstream just added the source package name in refine() */
       if (gs_app_get_management_plugin (app) == NULL &&
@@ -643,6 +646,7 @@ gs_plugin_refine (GsPlugin *plugin,
           gs_app_get_scope (app) == AS_APP_SCOPE_SYSTEM &&
           gs_app_get_source_default (app) != NULL)
         {
+          g_debug ("Setting ourselves as management plugin for app %s", gs_app_get_unique_id (app));
           gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
         }
 
@@ -652,6 +656,7 @@ gs_plugin_refine (GsPlugin *plugin,
           gs_app_get_scope (app) == AS_APP_SCOPE_SYSTEM &&
           gs_app_get_source_default (app) == NULL)
         {
+          g_debug ("Trying to resolve package name via appstream/desktop file for app %s", gs_app_get_unique_id (app));
           if (resolve_appstream_source_file_to_package_name (plugin, app, flags, cancellable, &local_error))
             {
               continue;
@@ -670,15 +675,14 @@ gs_plugin_refine (GsPlugin *plugin,
         }
 
       if (flags &
-              (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
-               GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
-               GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
-               GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
-               GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
-               GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
-               GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
-               GS_PLUGIN_REFINE_FLAGS_DEFAULT) &&
-          not_found_app_arr->len > 0)
+          (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
+           GS_PLUGIN_REFINE_FLAGS_DEFAULT))
         {
           if (!resolve_matching_package (plugin, app, flags, cancellable, &local_error))
             {
