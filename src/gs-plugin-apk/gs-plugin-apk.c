@@ -28,6 +28,8 @@ typedef enum _ApkPackageState
   PendingInstall,
   PendingRemoval,
   Upgradable,
+  Downgradable,
+  Reinstallable,
 } ApkPackageState;
 
 typedef struct
@@ -114,6 +116,8 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
       gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
       gs_app_set_version (app, pkg->m_version);
       break;
+    case Downgradable:
+    case Reinstallable:
     case Upgradable:
       gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
       gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
@@ -495,6 +499,8 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
     case Available:
       gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
       break;
+    case Downgradable:
+    case Reinstallable:
     case Upgradable:
       gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
       gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
