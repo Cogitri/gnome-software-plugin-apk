@@ -285,7 +285,7 @@ gs_plugin_add_updates (GsPlugin *plugin,
 
       value_tuple = g_variant_get_child_value (upgradable_packages, i);
       pkg = g_variant_to_apkd_package (value_tuple);
-      if (pkg.m_packageState == Upgradable)
+      if (pkg.m_packageState == Upgradable || pkg.m_packageState == Downgradable)
         {
           app = apk_package_to_app (plugin, &pkg);
           gs_app_list_add (list, g_steal_pointer (&app));
