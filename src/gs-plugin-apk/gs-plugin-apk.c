@@ -86,9 +86,9 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
 
   app = gs_app_new (pkg->m_name);
 
-  gs_app_set_kind (app, AS_APP_KIND_GENERIC);
+  gs_app_set_kind (app, AS_COMPONENT_KIND_GENERIC);
   gs_app_set_bundle_kind (app, AS_BUNDLE_KIND_PACKAGE);
-  gs_app_set_scope (app, AS_APP_SCOPE_SYSTEM);
+  gs_app_set_scope (app, AS_COMPONENT_SCOPE_SYSTEM);
   gs_app_set_allow_cancel (app, FALSE);
   gs_app_add_source (app, pkg->m_name);
   gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, pkg->m_name);
@@ -108,22 +108,24 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
     {
     case Installed:
     case PendingRemoval:
-      gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+      gs_app_set_state (app, GS_APP_STATE_INSTALLED);
       gs_app_set_version (app, pkg->m_version);
       break;
     case PendingInstall:
     case Available:
-      gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+      gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
       gs_app_set_version (app, pkg->m_version);
       break;
     case Downgradable:
     case Reinstallable:
     case Upgradable:
-      gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
-      gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
+      gs_app_set_state (app, GS_APP_STATE_UPDATABLE_LIVE);
+      gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
       gs_app_set_version (app, pkg->m_oldVersion);
       gs_app_set_update_version (app, pkg->m_version);
       break;
+    default:
+      g_assert_not_reached();
     }
   gs_plugin_cache_add (plugin, g_strdup_printf ("%s-%s", pkg->m_name, pkg->m_version), app);
 
@@ -168,10 +170,10 @@ apk_progress_signal_connect_callback (GDBusProxy *proxy,
 
       switch (gs_app_get_state (priv->current_app))
         {
-        case AS_APP_STATE_INSTALLING:
+        case GS_APP_STATE_INSTALLING:
           plugin_status = GS_PLUGIN_STATUS_INSTALLING;
           break;
-        case AS_APP_STATE_REMOVING:
+        case GS_APP_STATE_REMOVING:
           plugin_status = GS_PLUGIN_STATUS_REMOVING;
           break;
         default:
@@ -310,9 +312,9 @@ gs_plugin_app_install (GsPlugin *plugin,
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
     return TRUE;
 
-  gs_app_set_state (app, AS_APP_STATE_INSTALLING);
+  gs_app_set_state (app, GS_APP_STATE_INSTALLING);
 
-  if (gs_app_get_kind (app) == AS_APP_KIND_SOURCE)
+  if (gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
     {
       if (!apk_polkit1_call_add_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
         {
@@ -322,7 +324,7 @@ gs_plugin_app_install (GsPlugin *plugin,
           return FALSE;
         }
 
-      gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+      gs_app_set_state (app, GS_APP_STATE_INSTALLED);
       return TRUE;
     }
 
@@ -337,7 +339,7 @@ gs_plugin_app_install (GsPlugin *plugin,
       return FALSE;
     }
 
-  gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+  gs_app_set_state (app, GS_APP_STATE_INSTALLED);
   priv->current_app = NULL;
   return TRUE;
 }
@@ -357,9 +359,9 @@ gs_plugin_app_remove (GsPlugin *plugin,
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
     return TRUE;
 
-  gs_app_set_state (app, AS_APP_STATE_REMOVING);
+  gs_app_set_state (app, GS_APP_STATE_REMOVING);
 
-  if (gs_app_get_kind (app) == AS_APP_KIND_SOURCE)
+  if (gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
     {
       if (!apk_polkit1_call_remove_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
         {
@@ -369,7 +371,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
           return FALSE;
         }
 
-      gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+      gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
       return TRUE;
     }
 
@@ -384,7 +386,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
       return FALSE;
     }
 
-  gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+  gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
   priv->current_app = NULL;
   return TRUE;
 }
@@ -405,7 +407,7 @@ gs_plugin_update (GsPlugin *plugin,
 
       g_debug ("Updating app %s", gs_app_get_unique_id (app));
 
-      gs_app_set_state (app, AS_APP_STATE_INSTALLING);
+      gs_app_set_state (app, GS_APP_STATE_INSTALLING);
 
       if (!apk_polkit1_call_upgrade_package_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::name"), cancellable, &local_error))
         {
@@ -416,7 +418,7 @@ gs_plugin_update (GsPlugin *plugin,
           return FALSE;
         }
 
-      gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+      gs_app_set_state (app, GS_APP_STATE_INSTALLED);
       priv->current_app = NULL;
     }
 
@@ -428,13 +430,13 @@ void
 gs_plugin_adopt_app (GsPlugin *plugin, GsApp *app)
 {
   if (gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_PACKAGE &&
-      gs_app_get_scope (app) == AS_APP_SCOPE_SYSTEM)
+      gs_app_get_scope (app) == AS_COMPONENT_SCOPE_SYSTEM)
     {
       g_debug ("Adopted app %s", gs_app_get_unique_id (app));
       gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
     }
 
-  if (gs_app_get_kind (app) == AS_APP_KIND_OS_UPGRADE)
+  if (gs_app_get_kind (app) == AS_COMPONENT_KIND_OPERATING_SYSTEM)
     {
       g_debug ("Adopted app %s", gs_app_get_unique_id (app));
       gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
@@ -472,7 +474,7 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
     }
   if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL)
     {
-      gs_app_set_url (app, GS_APP_QUALITY_UNKNOWN, package->m_url);
+      gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, package->m_url);
     }
   if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE)
     {
@@ -485,26 +487,28 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
       gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
       gs_app_set_size_download (app, package->m_size);
       gs_app_set_size_installed (app, package->m_installedSize);
-      gs_app_set_url (app, GS_APP_QUALITY_UNKNOWN, package->m_url);
+      gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, package->m_url);
       gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, package->m_license);
     }
-  g_debug ("State for pkg %s: %d", gs_app_get_unique_id (app), package->m_packageState);
+  g_debug ("State for pkg %s: %u", gs_app_get_unique_id (app), package->m_packageState);
   switch (package->m_packageState)
     {
     case Installed:
     case PendingRemoval:
-      gs_app_set_state (app, AS_APP_STATE_INSTALLED);
+      gs_app_set_state (app, GS_APP_STATE_INSTALLED);
       break;
     case PendingInstall:
     case Available:
-      gs_app_set_state (app, AS_APP_STATE_AVAILABLE);
+      gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
       break;
     case Downgradable:
     case Reinstallable:
     case Upgradable:
-      gs_app_set_state (app, AS_APP_STATE_UPDATABLE_LIVE);
-      gs_app_set_kind (app, AS_APP_KIND_OS_UPDATE);
+      gs_app_set_state (app, GS_APP_STATE_UPDATABLE_LIVE);
+      gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
       break;
+    default:
+      g_assert_not_reached();
     }
 
   gs_app_add_source (app, package->m_name);
@@ -640,7 +644,7 @@ gs_plugin_refine (GsPlugin *plugin,
     {
       GsApp *app = gs_app_list_index (apps, i);
 
-      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD) || gs_app_get_kind (app) & AS_APP_KIND_SOURCE)
+      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD) || gs_app_get_kind (app) & AS_COMPONENT_KIND_REPOSITORY)
         {
           g_debug ("App %s has quirk WILDCARD or is of SOURCE kind; skipping!", gs_app_get_unique_id (app));
           continue;
@@ -649,7 +653,7 @@ gs_plugin_refine (GsPlugin *plugin,
       /* set management plugin for apps where appstream just added the source package name in refine() */
       if (gs_app_get_management_plugin (app) == NULL &&
           gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_PACKAGE &&
-          gs_app_get_scope (app) == AS_APP_SCOPE_SYSTEM &&
+          gs_app_get_scope (app) == AS_COMPONENT_SCOPE_SYSTEM &&
           gs_app_get_source_default (app) != NULL)
         {
           g_debug ("Setting ourselves as management plugin for app %s", gs_app_get_unique_id (app));
@@ -659,7 +663,7 @@ gs_plugin_refine (GsPlugin *plugin,
       /* resolve the source package name based on installed appdata/desktop file name */
       if (gs_app_get_management_plugin (app) == NULL &&
           gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_UNKNOWN &&
-          gs_app_get_scope (app) == AS_APP_SCOPE_SYSTEM &&
+          gs_app_get_scope (app) == AS_COMPONENT_SCOPE_SYSTEM &&
           gs_app_get_source_default (app) == NULL)
         {
           g_debug ("Trying to resolve package name via appstream/desktop file for app %s", gs_app_get_unique_id (app));
@@ -744,10 +748,13 @@ gs_plugin_add_sources (GsPlugin *plugin,
         {
         case 0:
           id = g_strdup_printf ("org.alpinelinux.%s.repo.%s", url, enabled ? "enabled" : "disabled");
+          break;
         case 1:
           g_strdup_printf ("org.alpinelinux.%s.repo.%s", repo_name[0], enabled ? "enabled" : "disabled");
+          break;
         default:
           id = g_strdup_printf ("org.alpinelinux.%s-%s.repo.%s", repo_name[len - 2], repo_name[len - 1], enabled ? "enabled" : "disabled");
+          break;
         }
 
       if (strstr (url, "http") == NULL)
@@ -774,9 +781,9 @@ gs_plugin_add_sources (GsPlugin *plugin,
         }
 
       app = gs_app_new (id);
-      gs_app_set_kind (app, AS_APP_KIND_SOURCE);
-      gs_app_set_scope (app, AS_APP_SCOPE_SYSTEM);
-      gs_app_set_state (app, enabled ? AS_APP_STATE_INSTALLED : AS_APP_STATE_AVAILABLE);
+      gs_app_set_kind (app, AS_COMPONENT_KIND_REPOSITORY);
+      gs_app_set_scope (app, AS_COMPONENT_SCOPE_SYSTEM);
+      gs_app_set_state (app, enabled ? GS_APP_STATE_INSTALLED : GS_APP_STATE_AVAILABLE);
       gs_app_add_quirk (app, GS_APP_QUIRK_NOT_LAUNCHABLE);
       gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, repo_displayname);
       gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, description);
