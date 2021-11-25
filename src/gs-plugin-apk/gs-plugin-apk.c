@@ -36,10 +36,10 @@ typedef struct
 {
   const gchar *m_name;
   const gchar *m_version;
-  const gchar *m_oldVersion;
-  const gchar *m_license;
-  const gchar *m_url;
   const gchar *m_description;
+  const gchar *m_license;
+  const gchar *m_oldVersion;
+  const gchar *m_url;
   gulong m_installedSize;
   gulong m_size;
   ApkPackageState m_packageState;
