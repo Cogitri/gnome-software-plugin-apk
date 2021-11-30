@@ -504,7 +504,29 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
       gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, package->m_license);
     }
   g_debug ("State for pkg %s: %u", gs_app_get_unique_id (app), package->m_packageState);
-  gs_app_set_state (apk_to_app_state (package->m_packageState));
+  /* FIXME: Currently apk-rs-polkit only returns states Available and Installed
+   * regardless of whether the packages are in a different state like upgraded.
+   * If we blindly set the state of the app to the one from package, we will
+   * in some circumstances overwrite the real state (that might have been).
+   * Specially important for functions like gs_plugin_add_updates that only set
+   * a temporary state. Therefore, here we only allow transitions which final
+   * state is legally GS_APP_STATE_AVAILABLE or GS_APP_STATE_INSTALLED.
+   */
+  switch (gs_app_get_state (app))
+    {
+    case GS_APP_STATE_UNKNOWN:
+    case GS_APP_STATE_QUEUED_FOR_INSTALL:
+    case GS_APP_STATE_REMOVING:
+    case GS_APP_STATE_INSTALLING:
+    case GS_APP_STATE_UNAVAILABLE:
+      gs_app_set_state (app, apk_to_app_state (package->m_packageState));
+    case GS_APP_STATE_AVAILABLE:
+    case GS_APP_STATE_INSTALLED:
+      break; /* Ignore changes between the states */
+    default:
+      g_warning ("Wrong state transition detected and avoided!");
+      break;
+    }
 
   gs_app_add_source (app, package->m_name);
   gs_app_set_metadata (app, "apk::name", package->m_name);
