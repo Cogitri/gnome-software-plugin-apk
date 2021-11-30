@@ -644,9 +644,9 @@ gs_plugin_refine (GsPlugin *plugin,
     {
       GsApp *app = gs_app_list_index (apps, i);
 
-      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD) || gs_app_get_kind (app) & AS_COMPONENT_KIND_REPOSITORY)
+      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD) || gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
         {
-          g_debug ("App %s has quirk WILDCARD or is of SOURCE kind; skipping!", gs_app_get_unique_id (app));
+          g_debug ("App %s has quirk WILDCARD or is of REPOSITORY kind; skipping!", gs_app_get_unique_id (app));
           continue;
         }
 
