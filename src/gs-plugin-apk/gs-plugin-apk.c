@@ -120,7 +120,6 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
     case Reinstallable:
     case Upgradable:
       gs_app_set_state (app, GS_APP_STATE_UPDATABLE_LIVE);
-      gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
       gs_app_set_version (app, pkg->m_oldVersion);
       gs_app_set_update_version (app, pkg->m_version);
       break;
@@ -505,7 +504,6 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
     case Reinstallable:
     case Upgradable:
       gs_app_set_state (app, GS_APP_STATE_UPDATABLE_LIVE);
-      gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
       break;
     default:
       g_assert_not_reached();
@@ -626,6 +624,10 @@ resolve_matching_package (GsPlugin *plugin,
   g_debug ("Found matching apk package %s for app %s", pkg.m_name, gs_app_get_unique_id (app));
 
   set_app_metadata (plugin, app, &pkg, flags);
+  /* We should only set generic apps for OS updates */
+  if (gs_app_get_kind(app) == AS_COMPONENT_KIND_GENERIC)
+    gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
+
   return TRUE;
 }
 
