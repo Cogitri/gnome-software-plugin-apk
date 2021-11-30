@@ -412,23 +412,29 @@ gs_plugin_update (GsPlugin *plugin,
 {
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
+  GsApp *app;
 
   for (guint i = 0; i < gs_app_list_length (apps); i++)
     {
-      GsApp *app = gs_app_list_index (apps, i);
+      app = gs_app_list_index (apps, i);
       priv->current_app = app;
 
       g_debug ("Updating app %s", gs_app_get_unique_id (app));
 
       gs_app_set_state (app, GS_APP_STATE_INSTALLING);
 
-      if (!apk_polkit1_call_upgrade_package_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::name"), cancellable, &local_error))
+      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY))
         {
-          g_dbus_error_strip_remote_error (local_error);
-          g_propagate_error (error, g_steal_pointer (&local_error));
-          gs_app_set_state_recover (app);
-          priv->current_app = NULL;
-          return FALSE;
+          if (!gs_plugin_update (plugin, gs_app_get_related (app), cancellable, &local_error))
+            goto error;
+        }
+      else
+        {
+          if (!apk_polkit1_call_upgrade_package_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::name"), cancellable, &local_error))
+            {
+              g_dbus_error_strip_remote_error (local_error);
+              goto error;
+            }
         }
 
       gs_app_set_state (app, GS_APP_STATE_INSTALLED);
@@ -437,6 +443,12 @@ gs_plugin_update (GsPlugin *plugin,
 
   gs_plugin_updates_changed (plugin);
   return TRUE;
+
+ error:
+  g_propagate_error (error, g_steal_pointer (&local_error));
+  gs_app_set_state_recover (app);
+  priv->current_app = NULL;
+  return FALSE;
 }
 
 void
