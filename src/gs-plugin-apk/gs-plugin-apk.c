@@ -70,6 +70,32 @@ g_variant_to_apkd_package (GVariant *value_tuple)
 }
 
 /**
+ * apk_to_app_state:
+ * @state: A ApkPackageState
+ *
+ * Convenience function which converts ApkdPackageState to a GsAppState.
+ **/
+static GsAppState apk_to_app_state (ApkPackageState state)
+{
+  switch (state)
+    {
+    case Installed:
+    case PendingRemoval:
+      return GS_APP_STATE_INSTALLED;
+    case PendingInstall:
+    case Available:
+      return GS_APP_STATE_AVAILABLE;
+    case Downgradable:
+    case Reinstallable:
+    case Upgradable:
+      return GS_APP_STATE_UPDATABLE_LIVE;
+    default:
+      g_assert_not_reached();
+      return GS_APP_STATE_UNKNOWN;
+    }
+}
+
+/**
  * apk_package_to_app:
  * @pkg: A ApkPackage
  *
@@ -104,27 +130,15 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
   gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
   gs_app_set_metadata (app, "GnomeSoftware::PackagingFormat", "apk");
-  switch (pkg->m_packageState)
+  gs_app_set_state (app, apk_to_app_state (pkg->m_packageState));
+  if (gs_app_get_state (app) == GS_APP_STATE_UPDATABLE_LIVE)
     {
-    case Installed:
-    case PendingRemoval:
-      gs_app_set_state (app, GS_APP_STATE_INSTALLED);
-      gs_app_set_version (app, pkg->m_version);
-      break;
-    case PendingInstall:
-    case Available:
-      gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
-      gs_app_set_version (app, pkg->m_version);
-      break;
-    case Downgradable:
-    case Reinstallable:
-    case Upgradable:
-      gs_app_set_state (app, GS_APP_STATE_UPDATABLE_LIVE);
       gs_app_set_version (app, pkg->m_oldVersion);
       gs_app_set_update_version (app, pkg->m_version);
-      break;
-    default:
-      g_assert_not_reached();
+    }
+  else
+    {
+      gs_app_set_version (app, pkg->m_version);
     }
   gs_plugin_cache_add (plugin, g_strdup_printf ("%s-%s", pkg->m_name, pkg->m_version), app);
 
@@ -490,24 +504,7 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
       gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, package->m_license);
     }
   g_debug ("State for pkg %s: %u", gs_app_get_unique_id (app), package->m_packageState);
-  switch (package->m_packageState)
-    {
-    case Installed:
-    case PendingRemoval:
-      gs_app_set_state (app, GS_APP_STATE_INSTALLED);
-      break;
-    case PendingInstall:
-    case Available:
-      gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
-      break;
-    case Downgradable:
-    case Reinstallable:
-    case Upgradable:
-      gs_app_set_state (app, GS_APP_STATE_UPDATABLE_LIVE);
-      break;
-    default:
-      g_assert_not_reached();
-    }
+  gs_app_set_state (apk_to_app_state (package->m_packageState));
 
   gs_app_add_source (app, package->m_name);
   gs_app_set_metadata (app, "apk::name", package->m_name);
