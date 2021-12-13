@@ -75,7 +75,8 @@ g_variant_to_apkd_package (GVariant *value_tuple)
  *
  * Convenience function which converts ApkdPackageState to a GsAppState.
  **/
-static GsAppState apk_to_app_state (ApkPackageState state)
+static GsAppState
+apk_to_app_state (ApkPackageState state)
 {
   switch (state)
     {
@@ -90,7 +91,7 @@ static GsAppState apk_to_app_state (ApkPackageState state)
     case Upgradable:
       return GS_APP_STATE_UPDATABLE_LIVE;
     default:
-      g_assert_not_reached();
+      g_assert_not_reached ();
       return GS_APP_STATE_UNKNOWN;
     }
 }
@@ -450,7 +451,7 @@ gs_plugin_update (GsPlugin *plugin,
   gs_plugin_updates_changed (plugin);
   return TRUE;
 
- error:
+error:
   g_propagate_error (error, g_steal_pointer (&local_error));
   gs_app_set_state_recover (app);
   priv->current_app = NULL;
@@ -662,7 +663,7 @@ resolve_matching_package (GsPlugin *plugin,
 
   set_app_metadata (plugin, app, &pkg, flags);
   /* We should only set generic apps for OS updates */
-  if (gs_app_get_kind(app) == AS_COMPONENT_KIND_GENERIC)
+  if (gs_app_get_kind (app) == AS_COMPONENT_KIND_GENERIC)
     gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
 
   return TRUE;
