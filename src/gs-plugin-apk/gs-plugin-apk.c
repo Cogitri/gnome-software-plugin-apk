@@ -769,55 +769,57 @@ gs_plugin_add_sources (GsPlugin *plugin,
       g_autofree gchar *description = NULL;
       g_autofree gchar *id = NULL;
       g_autofree gchar *repo_displayname = NULL;
-      g_autofree gchar **repo_name = NULL;
       g_autofree gchar *url = NULL;
+      g_autofree gchar *url_path = NULL;
+      g_autofree gchar *url_scheme = NULL;
+      gchar **repo_parts;
       g_autoptr (GsApp) app = NULL;
       g_autoptr (GVariant) value_tuple = NULL;
       gboolean enabled = FALSE;
-      gsize len;
 
       value_tuple = g_variant_get_child_value (repositories, i);
       enabled = g_variant_get_boolean (g_variant_get_child_value (value_tuple, 0));
       description = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 1), NULL));
-      url = g_variant_get_string (g_variant_get_child_value (value_tuple, 2), NULL);
-      repo_name = g_strsplit (url, "/", -1);
-      len = g_strv_length (repo_name);
+      url = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 2), NULL));
 
-      /* create something that we can use to enable/disable */
-      switch (len)
-        {
-        case 0:
-          id = g_strdup_printf ("org.alpinelinux.%s.repo.%s", url, enabled ? "enabled" : "disabled");
-          break;
-        case 1:
-          g_strdup_printf ("org.alpinelinux.%s.repo.%s", repo_name[0], enabled ? "enabled" : "disabled");
-          break;
-        default:
-          id = g_strdup_printf ("org.alpinelinux.%s-%s.repo.%s", repo_name[len - 2], repo_name[len - 1], enabled ? "enabled" : "disabled");
-          break;
-        }
+      g_debug ("Adding repository  %s", url);
 
-      if (strstr (url, "http") == NULL)
+      g_uri_split (url, G_URI_FLAGS_NONE, &url_scheme, NULL,
+                   NULL, NULL, &url_path, NULL, NULL, error);
+      if (*error)
+        return FALSE;
+
+      /* Regular repos will have at least 3 parts: distro, release and
+       * repository, e.g: /alpine/edge/community. We skip first '/'.
+       * Local repos can have more, but are stacked in the last value.*/
+      repo_parts = g_strsplit (url_path + 1, "/", 3);
+      {
+        g_autofree gchar *repo_id = g_strjoinv (".", repo_parts);
+        id = g_strconcat ("org.", repo_id, NULL);
+      }
+
+      if (url_scheme)
         {
-          if (len > 1)
+          /* If there is a scheme, it is a remote repository. Try to build
+           * a description depending on the information available,
+           * e.g: ["alpine", "edge", "community"] or ["postmarketos", "master"] */
+          g_autofree gchar *repo = repo_parts[0];
+          if (g_strv_length (repo_parts) == 3)
             {
-              repo_displayname = g_strdup_printf (_ ("Local repository %s/%s"), repo_name[len - 2], repo_name[len - 1]);
+              repo = g_strdup_printf ("%s %s", repo_parts[0], repo_parts[2]);
             }
-          else
+
+          g_autofree gchar *release = "";
+          if (g_strv_length (repo_parts) >= 2)
             {
-              repo_displayname = _ ("Local repository");
+              release = g_strdup_printf (" (release %s)", repo_parts[1]);
             }
+          repo_displayname = g_strdup_printf (_ ("Remote repository %s%s"), repo, release);
         }
       else
         {
-          if (len > 1)
-            {
-              repo_displayname = g_strdup_printf (_ ("Remote repository %s (branch: %s)"), repo_name[len - 1], repo_name[len - 2]);
-            }
-          else
-            {
-              repo_displayname = _ ("Remote repository");
-            }
+          g_autofree gchar *path = g_strjoinv ("/", repo_parts);
+          repo_displayname = g_strdup_printf (_ ("Local repository /%s"), path);
         }
 
       app = gs_app_new (id);
@@ -831,7 +833,11 @@ gs_plugin_add_sources (GsPlugin *plugin,
       gs_app_set_metadata (app, "apk::repo-url", url);
       gs_app_set_management_plugin (app, "apk");
       gs_app_list_add (list, g_steal_pointer (&app));
+
+      g_strfreev (repo_parts);
     }
+
+  g_debug ("Added repositories");
 
   return TRUE;
 }
