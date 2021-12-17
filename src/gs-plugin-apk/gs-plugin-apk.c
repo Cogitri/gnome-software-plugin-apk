@@ -778,8 +778,8 @@ gs_plugin_add_sources (GsPlugin *plugin,
 
       value_tuple = g_variant_get_child_value (repositories, i);
       enabled = g_variant_get_boolean (g_variant_get_child_value (value_tuple, 0));
-      description = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 1), &len));
-      url = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 2), &len));
+      description = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 1), NULL));
+      url = g_variant_get_string (g_variant_get_child_value (value_tuple, 2), NULL);
       repo_name = g_strsplit (url, "/", -1);
       len = g_strv_length (repo_name);
 
