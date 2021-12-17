@@ -756,6 +756,14 @@ gs_plugin_add_sources (GsPlugin *plugin,
       description = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 1), NULL));
       url = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 2), NULL));
 
+      app = gs_plugin_cache_lookup (plugin, url);
+      if (app)
+        {
+          gs_app_set_state (app, enabled ? GS_APP_STATE_INSTALLED : GS_APP_STATE_AVAILABLE);
+          gs_app_list_add (list, g_steal_pointer (&app));
+          continue;
+        }
+
       g_debug ("Adding repository  %s", url);
 
       g_uri_split (url, G_URI_FLAGS_NONE, &url_scheme, NULL,
@@ -806,6 +814,7 @@ gs_plugin_add_sources (GsPlugin *plugin,
       gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, url);
       gs_app_set_metadata (app, "apk::repo-url", url);
       gs_app_set_management_plugin (app, "apk");
+      gs_plugin_cache_add (plugin, url, app);
       gs_app_list_add (list, g_steal_pointer (&app));
 
       g_strfreev (repo_parts);
