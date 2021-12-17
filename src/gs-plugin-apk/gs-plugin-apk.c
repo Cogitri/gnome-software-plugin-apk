@@ -322,6 +322,7 @@ gs_plugin_app_install (GsPlugin *plugin,
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
+  g_return_val_if_fail (gs_app_get_kind (app) != AS_COMPONENT_KIND_REPOSITORY, TRUE);
   g_debug ("Trying to install app %s", gs_app_get_unique_id (app));
 
   /* We can only install apps we know of */
@@ -330,20 +331,6 @@ gs_plugin_app_install (GsPlugin *plugin,
 
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_INSTALLING);
-
-  if (gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
-    {
-      if (!apk_polkit1_call_add_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
-        {
-          g_dbus_error_strip_remote_error (local_error);
-          g_propagate_error (error, g_steal_pointer (&local_error));
-          gs_app_set_state_recover (app);
-          return FALSE;
-        }
-
-      gs_app_set_state (app, GS_APP_STATE_INSTALLED);
-      return TRUE;
-    }
 
   priv->current_app = app;
 
@@ -370,6 +357,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
+  g_return_val_if_fail (gs_app_get_kind (app) != AS_COMPONENT_KIND_REPOSITORY, TRUE);
   g_debug ("Trying to remove app %s", gs_app_get_unique_id (app));
 
   /* We can only remove apps we know of */
@@ -378,20 +366,6 @@ gs_plugin_app_remove (GsPlugin *plugin,
 
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_REMOVING);
-
-  if (gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
-    {
-      if (!apk_polkit1_call_remove_repository_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::repo-url"), cancellable, &local_error))
-        {
-          g_dbus_error_strip_remote_error (local_error);
-          g_propagate_error (error, g_steal_pointer (&local_error));
-          gs_app_set_state_recover (app);
-          return FALSE;
-        }
-
-      gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
-      return TRUE;
-    }
 
   priv->current_app = app;
 
@@ -839,5 +813,80 @@ gs_plugin_add_sources (GsPlugin *plugin,
 
   g_debug ("Added repositories");
 
+  return TRUE;
+}
+
+gboolean
+gs_plugin_repo_update (GsPlugin *plugin,
+                       GsApp *repo,
+                       GCancellable *cancellable,
+                       GError **error,
+                       gboolean is_install)
+{
+  GsPluginData *priv = gs_plugin_get_data (plugin);
+  g_autoptr (GError) local_error = NULL;
+  const gchar *url = NULL;
+  const gchar *action = is_install ? "Install" : "Remov";
+  int rc;
+
+  gs_app_set_progress (repo, GS_APP_PROGRESS_UNKNOWN);
+
+  url = gs_app_get_metadata_item (repo, "apk::repo-url");
+  g_debug ("%sing repository %s", action, url);
+  if (is_install)
+    {
+      rc = apk_polkit1_call_add_repository_sync (priv->proxy,
+                                                 url,
+                                                 cancellable,
+                                                 &local_error);
+    }
+  else
+    {
+      rc = apk_polkit1_call_remove_repository_sync (priv->proxy,
+                                                    url,
+                                                    cancellable,
+                                                    &local_error);
+    }
+  if (!rc)
+    {
+      g_dbus_error_strip_remote_error (local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
+      gs_app_set_state_recover (repo);
+      return FALSE;
+    }
+
+  g_debug ("%sed repository %s", action, url);
+  return TRUE;
+}
+
+gboolean
+gs_plugin_install_repo (GsPlugin *plugin,
+                        GsApp *repo,
+                        GCancellable *cancellable,
+                        GError **error)
+{
+  g_return_val_if_fail (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY, FALSE);
+  gs_app_set_state (repo, GS_APP_STATE_INSTALLING);
+
+  if (!gs_plugin_repo_update (plugin, repo, cancellable, error, TRUE))
+    return FALSE;
+
+  gs_app_set_state (repo, GS_APP_STATE_INSTALLED);
+  return TRUE;
+}
+
+gboolean
+gs_plugin_remove_repo (GsPlugin *plugin,
+                       GsApp *repo,
+                       GCancellable *cancellable,
+                       GError **error)
+{
+  g_return_val_if_fail (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY, FALSE);
+  gs_app_set_state (repo, GS_APP_STATE_REMOVING);
+
+  if (!gs_plugin_repo_update (plugin, repo, cancellable, error, FALSE))
+    return FALSE;
+
+  gs_app_set_state (repo, GS_APP_STATE_AVAILABLE);
   return TRUE;
 }
