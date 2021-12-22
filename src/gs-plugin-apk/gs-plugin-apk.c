@@ -279,11 +279,12 @@ gs_plugin_add_updates (GsPlugin *plugin,
 {
   g_autoptr (GVariant) upgradable_packages = NULL;
   g_autoptr (GError) local_error = NULL;
+  g_autoptr(GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
   g_debug ("Adding updates");
 
-  gs_app_set_progress (repo, GS_APP_PROGRESS_UNKNOWN);
+  gs_app_set_progress (app_dl, GS_APP_PROGRESS_UNKNOWN);
   if (!apk_polkit1_call_list_upgradable_packages_sync (priv->proxy, &upgradable_packages, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
@@ -326,7 +327,7 @@ gs_plugin_app_install (GsPlugin *plugin,
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
     return TRUE;
 
-  gs_app_set_progress (repo, GS_APP_PROGRESS_UNKNOWN);
+  gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_INSTALLING);
 
   if (gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
@@ -374,7 +375,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
     return TRUE;
 
-  gs_app_set_progress (repo, GS_APP_PROGRESS_UNKNOWN);
+  gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_REMOVING);
 
   if (gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
@@ -414,10 +415,11 @@ gs_plugin_update (GsPlugin *plugin,
                   GError **error)
 {
   g_autoptr (GError) local_error = NULL;
+  g_autoptr(GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
   GsPluginData *priv = gs_plugin_get_data (plugin);
   GsApp *app;
 
-  gs_app_set_progress (repo, GS_APP_PROGRESS_UNKNOWN);
+  gs_app_set_progress (app_dl, GS_APP_PROGRESS_UNKNOWN);
   for (guint i = 0; i < gs_app_list_length (apps); i++)
     {
       app = gs_app_list_index (apps, i);
