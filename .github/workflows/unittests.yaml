@@ -4,25 +4,14 @@ on: pull_request
 jobs:
   test:
     name: Tests
-    container: alpine:latest
+    container:
+      image: ghcr.io/cogitri/gnome-software-plugin-apk-ci:latest
+      credentials:
+        username: cogitri
+        password: ${{ secrets.DOCKER_TOKEN }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
-
-      - name: Install  C dependencies
-        run: |
-            apk add meson gnome-software-dev apk-polkit-rs-dev build-base curl \
-            appstream-glib-dev gdk-pixbuf-dev libxmlb-dev glib-dev gtk+3.0-dev libhandy1-dev \
-            json-glib-dev libsoup-dev gnome-desktop-dev gspell-dev polkit-dev gtk-doc \
-            ostree-dev flatpak-dev libgudev-dev gnome-online-accounts-dev appstream-dev
-
-      - name: Install G-S
-        run: |
-            curl -L -O https://download.gnome.org/sources/gnome-software/41/gnome-software-41.2.tar.xz
-            tar xf gnome-software-41.2.tar.xz
-            cd gnome-software-41.2
-            meson -Dvalgrind=false -Dmalcontent=false -Dpackagekit=false -Dfwupd=false build
-            DESTDIR=/ ninja -C build install
 
       - name: Build
         run: meson build && ninja -C build
