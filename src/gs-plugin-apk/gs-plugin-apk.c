@@ -280,7 +280,7 @@ gs_plugin_add_updates (GsPlugin *plugin,
 {
   g_autoptr (GVariant) upgradable_packages = NULL;
   g_autoptr (GError) local_error = NULL;
-  g_autoptr(GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
+  g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
   GsPluginData *priv = gs_plugin_get_data (plugin);
 
   g_debug ("Adding updates");
@@ -390,7 +390,7 @@ gs_plugin_update (GsPlugin *plugin,
                   GError **error)
 {
   g_autoptr (GError) local_error = NULL;
-  g_autoptr(GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
+  g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
   GsPluginData *priv = gs_plugin_get_data (plugin);
   GsApp *app;
 
