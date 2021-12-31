@@ -1,0 +1,17 @@
+name: Verify code formatting
+on: pull_request
+
+jobs:
+  lint:
+    name: Verify code format
+    container:
+      image: docker://alpine:latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: clang-format
+        run: apk add --no-cache clang-extra-tools
+
+      - name: lint
+        run: clang-format --Werror --dry-run --style=file --verbose src/gs-plugin-apk/*.c
