@@ -785,15 +785,17 @@ gs_plugin_add_sources (GsPlugin *plugin,
           /* If there is a scheme, it is a remote repository. Try to build
            * a description depending on the information available,
            * e.g: ["alpine", "edge", "community"] or ["postmarketos", "master"] */
-          g_autofree gchar *repo = repo_parts[0];
+          g_autofree gchar *repo = g_strdup (repo_parts[0]);
           if (g_strv_length (repo_parts) == 3)
             {
+              g_free (repo);
               repo = g_strdup_printf ("%s %s", repo_parts[0], repo_parts[2]);
             }
 
-          g_autofree gchar *release = "";
+          g_autofree gchar *release = g_strdup ("");
           if (g_strv_length (repo_parts) >= 2)
             {
+              g_free (release);
               release = g_strdup_printf (" (release %s)", repo_parts[1]);
             }
           repo_displayname = g_strdup_printf (_ ("Remote repository %s%s"), repo, release);
