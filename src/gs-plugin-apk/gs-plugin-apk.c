@@ -400,6 +400,10 @@ gs_plugin_update (GsPlugin *plugin,
       app = gs_app_list_index (apps, i);
       priv->current_app = app;
 
+      /* We can only update apps we know of */
+      if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
+        continue;
+
       g_debug ("Updating app %s", gs_app_get_unique_id (app));
 
       gs_app_set_state (app, GS_APP_STATE_INSTALLING);
