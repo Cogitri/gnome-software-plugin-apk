@@ -397,18 +397,22 @@ gs_plugin_update (GsPlugin *plugin,
   gs_app_set_progress (app_dl, GS_APP_PROGRESS_UNKNOWN);
   for (guint i = 0; i < gs_app_list_length (apps); i++)
     {
+      gboolean is_proxy;
       app = gs_app_list_index (apps, i);
-      priv->current_app = app;
 
-      /* We can only update apps we know of */
-      if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
+      is_proxy = gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY);
+
+      /* We shall only touch the apps if they are are owned by us or
+       * a proxy (and thus might contain some apps owned by us) */
+      if (!is_proxy && (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0))
         continue;
 
+      priv->current_app = app;
       g_debug ("Updating app %s", gs_app_get_unique_id (app));
 
       gs_app_set_state (app, GS_APP_STATE_INSTALLING);
 
-      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY))
+      if (is_proxy)
         {
           if (!gs_plugin_update (plugin, gs_app_get_related (app), cancellable, &local_error))
             goto error;
