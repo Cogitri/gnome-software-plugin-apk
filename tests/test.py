@@ -18,11 +18,12 @@ class GsPluginApkTest (DBusTestCase):
         klass.dbus_con = klass.get_dbus(system_bus=True)
 
     def setUp(self):
+        self.log = open(os.getenv('DBUS_TEST_LOG'), "w")
         self.p_mock = self.spawn_server('dev.Cogitri.apkPolkit1',
                                         '/dev/Cogitri/apkPolkit1',
                                         'dev.Cogitri.apkPolkit1',
                                         system_bus=True,
-                                        stdout=subprocess.PIPE) # This should be changed to a file!
+                                        stdout=self.log)
 
         self.apk_polkit_mock = dbus.Interface(self.dbus_con.
                                               get_object('dev.Cogitri.apkPolkit1',
@@ -36,7 +37,7 @@ class GsPluginApkTest (DBusTestCase):
 
 
     def tearDown(self):
-        self.p_mock.stdout.close()
+        self.log.close()
         self.p_mock.terminate()
         self.p_mock.wait()
 
