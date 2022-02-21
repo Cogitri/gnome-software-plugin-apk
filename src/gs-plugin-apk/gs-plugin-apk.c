@@ -835,7 +835,7 @@ gs_plugin_add_sources (GsPlugin *plugin,
   return TRUE;
 }
 
-gboolean
+static gboolean
 gs_plugin_repo_update (GsPlugin *plugin,
                        GsApp *repo,
                        GCancellable *cancellable,
