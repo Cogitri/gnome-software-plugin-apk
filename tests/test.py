@@ -32,7 +32,14 @@ class GsPluginApkTest (DBusTestCase):
 
         self.apk_polkit_mock.AddMethods('', [
             ('AddPackage', 's', '', ''),
-            ('DeletePackage', 's', '', '')
+            ('DeletePackage', 's', '', ''),
+            ('ListRepositories', '', 'a(bss)', 'ret = [' +
+             '(True, "a", "https://alpine.org/alpine/edge/main"),' +
+             '(False, "b", "https://pmos.org/pmos/master"),' +
+             '(True, "c", "/home/data/foo/bar/baz"),' + ']'),
+            ('UpdateRepositories', '', '', ''),
+            ('AddRepository', 's', '', ''),
+            ('RemoveRepository', 's', '', ''),
         ])
 
 
