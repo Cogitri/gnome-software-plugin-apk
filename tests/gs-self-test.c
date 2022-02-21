@@ -11,15 +11,11 @@
 #include <gs-test.h>
 
 /* static void */
-/* gs_plugin_refresh_func (void) */
-/* { */
-/* } */
-
-/* static void */
 /* gs_plugin_add_updates_func (void) */
 /* { */
 /* } */
 
+// Update app list
 /* static void */
 /* gs_plugin_update_func (void) */
 /* { */
@@ -35,10 +31,73 @@
 /* { */
 /* } */
 
-/* static void */
-/* gs_plugin_add_sources (void) */
-/* { */
-/* } */
+static void
+gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GsPluginJob) plugin_job = NULL;
+  g_autoptr (GsAppList) list = NULL;
+  GsApp *repo = NULL;
+  gboolean rc;
+
+  // Execute get sources action
+  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_GET_SOURCES, NULL);
+  list = gs_plugin_loader_job_process (plugin_loader, plugin_job, NULL, &error);
+  gs_test_flush_main_context ();
+  g_assert_no_error (error);
+  g_assert_nonnull (list);
+
+  // Verify correctness of result. TODO: for loop and check app name
+  g_assert_cmpint (gs_app_list_length (list), ==, 3);
+  repo = gs_app_list_index (list, 0);
+  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
+  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_INSTALLED);
+  g_assert_cmpstr (gs_app_get_management_plugin (repo), ==, "apk");
+  repo = gs_app_list_index (list, 1);
+  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
+  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_AVAILABLE);
+  g_assert_cmpstr (gs_app_get_management_plugin (repo), ==, "apk");
+  repo = gs_app_list_index (list, 2);
+  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
+  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_INSTALLED);
+  g_assert_cmpstr (gs_app_get_management_plugin (repo), ==, "apk");
+
+  // Remove repository
+  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_REMOVE_REPO,
+                                   "app", repo,
+                                   NULL);
+  rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
+  gs_test_flush_main_context ();
+  g_assert_no_error (error);
+  g_assert_true (rc);
+
+  // Verify repo status.
+  // TODO: With a more complex DBusMock we could even check the count
+  // Alternatively, we should check the logs that DBus got called
+  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
+  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_AVAILABLE);
+
+  // gs_plugin_install_repo (reinstall it, check it works)
+  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_INSTALL_REPO,
+                                   "app", repo,
+                                   NULL);
+  rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
+  gs_test_flush_main_context ();
+  g_assert_no_error (error);
+  g_assert_true (rc);
+
+  // Verify repo status
+  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
+  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_INSTALLED);
+
+  // Refresh repos.
+  // TODO: Check logs!
+  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_REFRESH, NULL);
+  rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
+  gs_test_flush_main_context ();
+  g_assert_no_error (error);
+  g_assert_true (rc);
+}
 
 static void
 gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
@@ -126,6 +185,9 @@ main (int argc, char **argv)
   g_assert_true (ret);
   g_assert_true (gs_plugin_loader_get_enabled (plugin_loader, "apk"));
 
+  g_test_add_data_func ("/gnome-software/plugins/apk/repo-actions",
+                        plugin_loader,
+                        (GTestDataFunc) gs_plugins_apk_repo_actions);
   g_test_add_data_func ("/gnome-software/plugins/apk/app-install-remove",
                         plugin_loader,
                         (GTestDataFunc) gs_plugins_apk_app_install_remove);
