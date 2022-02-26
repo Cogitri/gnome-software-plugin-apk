@@ -204,6 +204,7 @@ gs_plugin_initialize (GsPlugin *plugin)
   GsPluginData *priv;
 
   gs_plugin_add_rule (plugin, GS_PLUGIN_RULE_RUN_BEFORE, "icons");
+  gs_plugin_add_rule (plugin, GS_PLUGIN_RULE_RUN_BEFORE, "generic-updates");
   /* We want to get packages from appstream and refine them */
   gs_plugin_add_rule (plugin, GS_PLUGIN_RULE_RUN_AFTER, "appstream");
   gs_plugin_alloc_data (plugin, sizeof (GsPluginData));
