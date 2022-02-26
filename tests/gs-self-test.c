@@ -11,17 +11,6 @@
 #include <gs-test.h>
 
 /* static void */
-/* gs_plugin_add_updates_func (void) */
-/* { */
-/* } */
-
-// Update app list
-/* static void */
-/* gs_plugin_update_func (void) */
-/* { */
-/* } */
-
-/* static void */
 /* gs_plugin_adopt_app_func (void) */
 /* { */
 /* } */
@@ -100,6 +89,75 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
 }
 
 static void
+gs_plugins_apk_updates (GsPluginLoader *plugin_loader)
+{
+  // This is certainly the most complex test
+  // Steps:
+  // * Add updates should return upgradable and a downgradable
+  //   packages. This could be extended in the future.
+  // * We should enable generic updates plugin and verify that
+  //   the proxy app is created.
+  // * We would like that also some DESKTOP app is created. Either
+  //   we hack something or enable the appstream plugin.
+  // * Execute update: Verify packages are updated? Needs Mock improvements!
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GsPluginJob) plugin_job = NULL;
+  GsApp *generic_app = NULL;
+  GsApp *desktop_app = NULL;
+  GsApp *system_app = NULL;
+  g_autoptr (GsApp) foreign_app = NULL;
+  g_autoptr (GsAppList) update_list = NULL;
+  g_autoptr (GsAppList) updated_list = NULL;
+  GsAppList *related = NULL;
+
+  // List updates
+  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_GET_UPDATES,
+                                   "refine-flags", GS_PLUGIN_REFINE_FLAGS_REQUIRE_UPDATE_DETAILS,
+                                   NULL);
+  update_list = gs_plugin_loader_job_process (plugin_loader, plugin_job, NULL, &error);
+  gs_test_flush_main_context ();
+  g_assert_no_error (error);
+  g_assert_nonnull (update_list);
+
+  g_assert_cmpint (gs_app_list_length (update_list), ==, 2);
+  // Check desktop app
+  desktop_app = gs_app_list_index (update_list, 0);
+  g_assert_nonnull (desktop_app);
+  g_assert_cmpint (gs_app_get_state (desktop_app), ==, GS_APP_STATE_UPDATABLE_LIVE);
+  // Check generic proxy app
+  generic_app = gs_app_list_index (update_list, 1);
+  g_assert_nonnull (generic_app);
+  g_assert_true (gs_app_has_quirk (generic_app, GS_APP_QUIRK_IS_PROXY));
+  related = gs_app_get_related (generic_app);
+  g_assert_cmpint (gs_app_list_length (related), ==, 1);
+  system_app = gs_app_list_index (related, 0);
+  g_assert_cmpint (gs_app_get_state (system_app), ==, GS_APP_STATE_UPDATABLE_LIVE);
+
+  // Execute update!
+  foreign_app = gs_app_new ("foreign");
+  gs_app_list_add (update_list, foreign_app); // No management plugin, should get ignored!
+  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_UPDATE,
+                                   "list", update_list,
+                                   NULL);
+  updated_list = gs_plugin_loader_job_process (plugin_loader, plugin_job, NULL, &error);
+  gs_test_flush_main_context ();
+  g_assert_no_error (error);
+  g_assert_nonnull (updated_list);
+
+  // Check desktop app: TODO: Check logs!
+  desktop_app = gs_app_list_index (updated_list, 0);
+  g_assert_nonnull (desktop_app);
+  g_assert_cmpint (gs_app_get_state (desktop_app), ==, GS_APP_STATE_INSTALLED);
+  // Check generic proxy app: TODO: Check logs!
+  generic_app = gs_app_list_index (updated_list, 1);
+  g_assert_true (gs_app_has_quirk (generic_app, GS_APP_QUIRK_IS_PROXY));
+  related = gs_app_get_related (generic_app);
+  g_assert_cmpint (gs_app_list_length (related), ==, 1);
+  system_app = gs_app_list_index (related, 0);
+  g_assert_cmpint (gs_app_get_state (system_app), ==, GS_APP_STATE_INSTALLED);
+}
+
+static void
 gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
 {
   g_autoptr (GError) error = NULL;
@@ -143,6 +201,8 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
 int
 main (int argc, char **argv)
 {
+  g_autofree gchar *xml = NULL;
+  g_autofree gchar *tmp_root = NULL;
   g_autoptr (GsPluginLoader) plugin_loader = NULL;
   g_autoptr (GSettings) settings = NULL;
   g_autoptr (GError) error = NULL;
@@ -150,6 +210,8 @@ main (int argc, char **argv)
   int retval;
   const gchar *allowlist[] = {
     "apk",
+    "generic-updates",
+    "appstream",
     NULL
   };
 
@@ -160,7 +222,25 @@ main (int argc, char **argv)
    * Might be useful at some point though */
   g_assert_true (g_settings_set_strv (settings, "external-appstream-urls", NULL));
 
+  /* Adapted from upstream dummy/gs-self-test.c */
+  xml = g_strdup ("<?xml version=\"1.0\"?>\n"
+                  "<components version=\"0.9\">\n"
+                  "  <component type=\"desktop\">\n"
+                  "    <id>a.desktop</id>\n"
+                  "    <name>a</name>\n"
+                  "    <pkgname>a</pkgname>\n"
+                  "  </component>\n"
+                  "  <info>\n"
+                  "    <scope>user</scope>\n"
+                  "  </info>\n"
+                  "</components>\n");
+  g_setenv ("GS_SELF_TEST_APPSTREAM_XML", xml, TRUE);
   g_setenv ("G_MESSAGES_DEBUG", "all", TRUE);
+
+  /* Needed for appstream plugin to store temporary data! */
+  tmp_root = g_dir_make_tmp ("gnome-software-apk-test-XXXXXX", NULL);
+  g_assert_true (tmp_root != NULL);
+  g_setenv ("GS_SELF_TEST_CACHEDIR", tmp_root, TRUE);
 
   g_test_init (&argc, &argv,
                G_TEST_OPTION_ISOLATE_DIRS,
@@ -176,6 +256,7 @@ main (int argc, char **argv)
   /* g_signal_connect (plugin_loader, "status-changed", */
   /*                   G_CALLBACK (gs_plugin_loader_status_changed_cb), NULL); */
   gs_plugin_loader_add_location (plugin_loader, LOCALPLUGINDIR);
+  gs_plugin_loader_add_location (plugin_loader, SYSTEMPLUGINDIR);
   ret = gs_plugin_loader_setup (plugin_loader,
                                 (gchar **) allowlist,
                                 NULL,
@@ -184,18 +265,22 @@ main (int argc, char **argv)
   g_assert_no_error (error);
   g_assert_true (ret);
   g_assert_true (gs_plugin_loader_get_enabled (plugin_loader, "apk"));
+  g_assert_true (gs_plugin_loader_get_enabled (plugin_loader, "generic-updates"));
+  g_assert_true (gs_plugin_loader_get_enabled (plugin_loader, "appstream"));
 
   g_test_add_data_func ("/gnome-software/plugins/apk/repo-actions",
                         plugin_loader,
                         (GTestDataFunc) gs_plugins_apk_repo_actions);
+  g_test_add_data_func ("/gnome-software/plugins/apk/updates",
+                        plugin_loader,
+                        (GTestDataFunc) gs_plugins_apk_updates);
   g_test_add_data_func ("/gnome-software/plugins/apk/app-install-remove",
                         plugin_loader,
                         (GTestDataFunc) gs_plugins_apk_app_install_remove);
-
   retval = g_test_run ();
 
-  /* Clean up. */ /* Probably not needed */
-  /* gs_utils_rmtree (tmp_root, NULL); */
+  /* Clean up. */
+  gs_utils_rmtree (tmp_root, NULL);
 
   return retval;
 }
