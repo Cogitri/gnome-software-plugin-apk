@@ -2,6 +2,7 @@ gnome = import('gnome')
 
 test_c_args = [
   '-DLOCALPLUGINDIR="' + meson.project_build_root() + '"',
+  '-DSYSTEMPLUGINDIR="' + plugin_install_dir + '"',
 ]
 
 test = executable(
