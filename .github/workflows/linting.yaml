@@ -14,4 +14,4 @@ jobs:
         run: apk add --no-cache clang-extra-tools
 
       - name: lint
-        run: clang-format --Werror --dry-run --style=file --verbose src/gs-plugin-apk/*.c
+        run: clang-format --Werror --dry-run --style=file --verbose src/gs-plugin-apk/*.c tests/*.c
