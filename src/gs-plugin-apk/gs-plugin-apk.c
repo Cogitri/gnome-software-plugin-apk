@@ -6,6 +6,7 @@
  */
 
 #include <apk-polkit-1/apk-polkit-client.h>
+#include <appstream.h>
 #include <gnome-software.h>
 #include <libintl.h>
 #include <locale.h>
@@ -570,25 +571,22 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
 }
 
 /**
- * resolve_appstream_source_file_to_package_name:
+ * fix_app_missing_appstream:
  * @plugin: The apk GsPlugin.
- * @app: The GsApp to resolve the appstream/desktop file for.
- * @flags: TheGsPluginRefineFlags which determine what data we add.
- * @cancellable: GCancellable to cancel resolving what app owns the appstream/desktop file.
- * @error: GError which is set if something goes wrong.
+ * @app: The GsApp to resolve the metainfo/desktop file for.
+ * @cancellable: GCancellable to cancel synchronous dbus call.
  *
- * Check what apk package owns the desktop/appstream file from which the app was generated from
- * by the desktop/appstream plugin. Add additional info to the package we have in our repos if we
- * find a matching package installed on the system and adopt the package.
+ * If the appstream plugin could not find the app in the distribution metadata,
+ * it might have created the application from the metainfo or desktop files
+ * installed. It will contain some basic information, but the apk package to
+ * which it belongs (the source) needs to completed by us.
  **/
 static gboolean
-resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
-                                               GsApp *app,
-                                               GsPluginRefineFlags flags,
-                                               GCancellable *cancellable,
-                                               GError **error)
+fix_app_missing_appstream (GsPlugin *plugin,
+                           GsApp *app,
+                           GCancellable *cancellable)
 {
-  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GError) error = NULL;
   g_autoptr (GVariant) search_result = NULL;
   gchar *fn;
   GsPluginData *priv = gs_plugin_get_data (plugin);
@@ -623,59 +621,59 @@ resolve_appstream_source_file_to_package_name (GsPlugin *plugin,
 
   if (!g_file_test (fn, G_FILE_TEST_EXISTS))
     {
-      g_set_error (error, GS_PLUGIN_ERROR, GS_PLUGIN_ERROR_FAILED, _ ("No desktop or appstream file found for app %s"), gs_app_get_unique_id (app));
+      g_error ("No desktop or appstream file found for app %s", gs_app_get_unique_id (app));
       return FALSE;
     }
 
   g_debug ("Found desktop/appstream file %s for app %s", fn, gs_app_get_unique_id (app));
 
-  if (!apk_polkit1_call_search_file_owner_sync (priv->proxy, fn, &search_result, cancellable, &local_error))
+  if (!apk_polkit1_call_search_file_owner_sync (priv->proxy, fn, &search_result, cancellable, &error))
     {
-      g_warning ("Couldn't find any matches for appdata file");
-      g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        {
+          g_dbus_error_strip_remote_error (error);
+          g_warning ("Couldn't find any matches for metainfo file '%s': %s", fn, error->message);
+          g_clear_error (&error);
+        }
       return FALSE;
     }
 
   package = g_variant_to_apkd_package (search_result);
-
-  set_app_metadata (plugin, app, &package, flags);
+  gs_app_add_source (app, package.m_name);
 
   return TRUE;
 }
 
 /**
- * resolve_matching_package:
+ * refine_apk_package:
  * @plugin: The apk GsPlugin.
  * @app: The app which we try to refine.
  * @flags: TheGsPluginRefineFlags which determine what data we add.
  * @cancellable: GCancellable to cancel resolving what app owns the appstream/desktop file.
  * @error: GError which is set if something goes wrong.
  *
- * Try to find a package among all available packages which matches the specified app and
- * refine it with additional info apk provides.
+ * Get details from apk package for a specific app and fill-in requested refine data.
  **/
 static gboolean
-resolve_matching_package (GsPlugin *plugin,
-                          GsApp *app,
-                          GsPluginRefineFlags flags,
-                          GCancellable *cancellable,
-                          GError **error)
+refine_apk_package (GsPlugin *plugin,
+                    GsApp *app,
+                    GsPluginRefineFlags flags,
+                    GCancellable *cancellable,
+                    GError **error)
 {
-  g_autoptr (GVariant) matching_package = NULL;
+  g_autoptr (GVariant) apk_package = NULL;
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
+  const gchar *source = gs_app_get_source_default (app);
 
-  if (!apk_polkit1_call_get_package_details_sync (priv->proxy, gs_app_get_source_default (app), &matching_package, cancellable, &local_error))
+  if (!apk_polkit1_call_get_package_details_sync (priv->proxy, source, &apk_package, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
-  ApkdPackage pkg = g_variant_to_apkd_package (matching_package);
-
-  g_debug ("Found matching apk package %s for app %s", pkg.m_name, gs_app_get_unique_id (app));
+  ApkdPackage pkg = g_variant_to_apkd_package (apk_package);
 
   set_app_metadata (plugin, app, &pkg, flags);
   /* We should only set generic apps for OS updates */
@@ -692,51 +690,69 @@ gs_plugin_refine (GsPlugin *plugin,
                   GCancellable *cancellable,
                   GError **error)
 {
-  g_autoptr (GError) local_error = NULL;
-
   g_debug ("Starting refinining process");
 
   for (guint i = 0; i < gs_app_list_length (apps); i++)
     {
       GsApp *app = gs_app_list_index (apps, i);
+      GPtrArray *sources;
+      AsBundleKind bundle_kind = gs_app_get_bundle_kind (app);
 
-      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD) || gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
+      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD) ||
+          gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
         {
           g_debug ("App %s has quirk WILDCARD or is of REPOSITORY kind; skipping!", gs_app_get_unique_id (app));
           continue;
         }
 
-      /* set management plugin for apps where appstream just added the source package name in refine() */
-      if (gs_app_get_management_plugin (app) == NULL &&
-          gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_PACKAGE &&
-          gs_app_get_scope (app) == AS_COMPONENT_SCOPE_SYSTEM &&
-          gs_app_get_source_default (app) != NULL)
+      /* Only package and unknown (desktop or metainfo file with upstream AS)
+       * belog to us */
+      if (bundle_kind != AS_BUNDLE_KIND_UNKNOWN &&
+          bundle_kind != AS_BUNDLE_KIND_PACKAGE)
         {
+          g_debug ("App %s has bundle kind %s; skipping!", gs_app_get_unique_id (app),
+                   as_bundle_kind_to_string (bundle_kind));
+          continue;
+        }
+
+      /* set management plugin for system apps just created by appstream */
+      if (gs_app_get_management_plugin (app) == NULL &&
+          gs_app_get_scope (app) == AS_COMPONENT_SCOPE_SYSTEM &&
+          g_strcmp0 (gs_app_get_metadata_item (app, "GnomeSoftware::Creator"), "appstream") == 0)
+        {
+          /* If appstream couldn't assign a source, it means the app does not
+           * have an entry in the distribution-generated metadata. That should
+           * be fixed in the app, but we try to workaround it by finding the
+           * owner of the metainfo or desktop file */
+          if (gs_app_get_source_default (app) == NULL)
+            {
+              g_warning ("App %s missing pkgname. Trying to resolve via metainfo/desktop file",
+                         gs_app_get_unique_id (app));
+              if (!fix_app_missing_appstream (plugin, app, cancellable))
+                {
+                  if (g_cancellable_is_cancelled (cancellable))
+                    return FALSE;
+                  else
+                    continue;
+                }
+            }
+
           g_debug ("Setting ourselves as management plugin for app %s", gs_app_get_unique_id (app));
           gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
         }
 
-      /* resolve the source package name based on installed appdata/desktop file name */
-      if (gs_app_get_management_plugin (app) == NULL &&
-          gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_UNKNOWN &&
-          gs_app_get_scope (app) == AS_COMPONENT_SCOPE_SYSTEM &&
-          gs_app_get_source_default (app) == NULL)
-        {
-          g_debug ("Trying to resolve package name via appstream/desktop file for app %s", gs_app_get_unique_id (app));
-          if (resolve_appstream_source_file_to_package_name (plugin, app, flags, cancellable, &local_error))
-            {
-              continue;
-            }
-          else
-            {
-              g_dbus_error_strip_remote_error (local_error);
-              g_propagate_error (error, g_steal_pointer (&local_error));
-              return FALSE;
-            }
-        }
+      if (g_strcmp0 (gs_app_get_management_plugin (app), gs_plugin_get_name (plugin)) != 0)
+        continue;
 
-      if (g_strcmp0 (gs_app_get_management_plugin (app), gs_plugin_get_name (plugin)) != 0 || gs_app_get_source_default (app) == NULL)
+      sources = gs_app_get_sources (app);
+      if (sources->len == 0)
         {
+          g_warning ("app %s has missing sources; skipping", gs_app_get_unique_id (app));
+          continue;
+        }
+      if (sources->len >= 2)
+        {
+          g_warning ("app %s has %d > 1 sources; skipping", gs_app_get_unique_id (app), sources->len);
           continue;
         }
 
@@ -750,11 +766,8 @@ gs_plugin_refine (GsPlugin *plugin,
            GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
            GS_PLUGIN_REFINE_FLAGS_DEFAULT))
         {
-          if (!resolve_matching_package (plugin, app, flags, cancellable, &local_error))
-            {
-              g_propagate_error (error, g_steal_pointer (&local_error));
-              return FALSE;
-            }
+          if (!refine_apk_package (plugin, app, flags, cancellable, error))
+            return FALSE;
         }
     }
 
