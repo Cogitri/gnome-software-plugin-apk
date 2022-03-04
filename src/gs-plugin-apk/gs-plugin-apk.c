@@ -125,11 +125,9 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   gs_app_set_origin (app, "alpine");
   gs_app_set_origin_hostname (app, "alpinelinux.org");
   gs_app_set_management_plugin (app, "apk");
-  gs_app_set_metadata (app, "apk::name", pkg->m_name);
   gs_app_set_size_installed (app, pkg->m_installedSize);
   gs_app_set_size_download (app, pkg->m_size);
   gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
-  gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
   gs_app_set_metadata (app, "GnomeSoftware::PackagingFormat", "apk");
   gs_app_set_state (app, apk_to_app_state (pkg->m_packageState));
   if (gs_app_get_state (app) == GS_APP_STATE_UPDATABLE_LIVE)
@@ -144,6 +142,27 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   gs_plugin_cache_add (plugin, g_strdup_printf ("%s-%s", pkg->m_name, pkg->m_version), app);
 
   return app;
+}
+
+/**
+ * gs_plugin_apk_get_source:
+ * @app: The GsApp
+ *
+ * Convenience function that verifies that the app only has a single source.
+ * Returns the corresponding source if successful or NULL if failed.
+ */
+static gchar *
+gs_plugin_apk_get_source (GsApp *app, GError **error)
+{
+  GPtrArray *sources = gs_app_get_sources (app);
+  if (sources->len != 1)
+    {
+      g_set_error (error, GS_PLUGIN_ERROR, GS_PLUGIN_ERROR_FAILED,
+                   "app %s has number of sources: %d != 1",
+                   gs_app_get_unique_id (app), sources->len);
+      return NULL;
+    }
+  return g_strdup (g_ptr_array_index (sources, 0));
 }
 
 /**
@@ -322,20 +341,25 @@ gs_plugin_app_install (GsPlugin *plugin,
 {
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
+  g_autofree gchar *source = NULL;
 
   g_return_val_if_fail (gs_app_get_kind (app) != AS_COMPONENT_KIND_REPOSITORY, TRUE);
-  g_debug ("Trying to install app %s", gs_app_get_unique_id (app));
 
   /* We can only install apps we know of */
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
     return TRUE;
 
+  source = gs_plugin_apk_get_source (app, error);
+  if (source == NULL)
+    return FALSE;
+
+  g_debug ("Trying to install app %s", gs_app_get_unique_id (app));
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_INSTALLING);
 
   priv->current_app = app;
 
-  if (!apk_polkit1_call_add_package_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::name"), cancellable, &local_error))
+  if (!apk_polkit1_call_add_package_sync (priv->proxy, source, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -357,20 +381,25 @@ gs_plugin_app_remove (GsPlugin *plugin,
 {
   g_autoptr (GError) local_error = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
+  g_autofree gchar *source = NULL;
 
   g_return_val_if_fail (gs_app_get_kind (app) != AS_COMPONENT_KIND_REPOSITORY, TRUE);
-  g_debug ("Trying to remove app %s", gs_app_get_unique_id (app));
 
   /* We can only remove apps we know of */
   if (g_strcmp0 (gs_app_get_management_plugin (app), "apk") != 0)
     return TRUE;
 
+  source = gs_plugin_apk_get_source (app, error);
+  if (source == NULL)
+    return FALSE;
+
+  g_debug ("Trying to remove app %s", gs_app_get_unique_id (app));
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_REMOVING);
 
   priv->current_app = app;
 
-  if (!apk_polkit1_call_delete_package_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::name"), cancellable, &local_error))
+  if (!apk_polkit1_call_delete_package_sync (priv->proxy, source, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -420,7 +449,11 @@ gs_plugin_update (GsPlugin *plugin,
         }
       else
         {
-          if (!apk_polkit1_call_upgrade_package_sync (priv->proxy, gs_app_get_metadata_item (app, "apk::name"), cancellable, &local_error))
+          g_autofree gchar *source = gs_plugin_apk_get_source (app, &local_error);
+          if (source == NULL)
+            goto error;
+
+          if (!apk_polkit1_call_upgrade_package_sync (priv->proxy, source, cancellable, &local_error))
             {
               g_dbus_error_strip_remote_error (local_error);
               goto error;
@@ -530,8 +563,8 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
       break;
     }
 
-  gs_app_add_source (app, package->m_name);
-  gs_app_set_metadata (app, "apk::name", package->m_name);
+  if (g_strcmp0 (gs_app_get_source_default (app), package->m_name) != 0)
+    gs_app_add_source (app, package->m_name);
   gs_app_set_management_plugin (app, gs_plugin_get_name (plugin));
   gs_app_set_bundle_kind (app, AS_BUNDLE_KIND_PACKAGE);
 }
