@@ -169,14 +169,26 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
   g_autoptr (GsApp) app = NULL;
   gboolean rc;
 
-  // Create installable app
-  app = gs_app_new ("dev.test");
-  gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
-  gs_app_set_kind (app, AS_COMPONENT_KIND_GENERIC);
-  gs_app_set_metadata (app, "apk::name", "test");
-  gs_app_set_management_plugin (app, "apk");
+  // Search for a non-installed app
+  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_SEARCH,
+                                   "search", "apk-test",
+                                   // We force refine to take ownership
+                                   "refine-flags", GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION,
+                                   NULL);
+  app = gs_plugin_loader_job_process_app (plugin_loader, plugin_job, NULL, &error);
+  gs_test_flush_main_context ();
+  g_assert_no_error (error);
+  g_assert (app != NULL);
+
+  // make sure we got the correct app and is managed by us
+  g_assert_cmpstr (gs_app_get_id (app), ==, "apk-test-app.desktop");
+  g_assert_cmpstr (gs_app_get_management_plugin (app), ==, "apk");
+  g_assert_cmpint (gs_app_get_kind (app), ==, AS_COMPONENT_KIND_DESKTOP_APP);
+  g_assert_cmpint (gs_app_get_scope (app), ==, AS_COMPONENT_SCOPE_SYSTEM);
+  g_assert_cmpint (gs_app_get_state (app), ==, GS_APP_STATE_AVAILABLE);
 
   // Execute installation action
+  g_object_unref (plugin_job);
   plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_INSTALL,
                                    "app", app,
                                    NULL);
