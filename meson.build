@@ -14,6 +14,7 @@ apk_dep = dependency('apk-polkit-client-1')
 glib_dep = dependency('glib-2.0', version: '>=2.60')
 gobject_dep = dependency('gobject-2.0')
 gio_dep = dependency('gio-2.0')
+appstream_dep = dependency('appstream')
 
 plugin_apk_lib = shared_library(
   'gs_plugin_apk',
@@ -21,7 +22,7 @@ plugin_apk_lib = shared_library(
   install : true,
   install_dir: plugin_install_dir,
   c_args : cargs,
-  dependencies : [ gnome_software_dep, apk_dep, glib_dep,  gobject_dep, gio_dep ],
+  dependencies : [ gnome_software_dep, apk_dep, glib_dep,  gobject_dep, gio_dep, appstream_dep],
 )
 
 install_data(
