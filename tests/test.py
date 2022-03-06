@@ -41,8 +41,8 @@ class GsPluginApkTest (DBusTestCase):
             ('AddRepository', 's', '', ''),
             ('RemoveRepository', 's', '', ''),
             ('ListUpgradablePackages', '', 'a(ssssssttu)', 'ret = [' +
-             '("a", "0.2.0", "pkg a", "GPL", "0.1.0", "url", 50, 40, 4),' + # 4 = UPGRADABLE
-             '("b", "0.2.0", "pkg b", "GPL", "0.3.0", "url", 50, 40, 5),' + # 5 = DOWNGRADABLE
+             '("apk-test-app", "0.2.0", "desktop app", "GPL", "0.1.0", "url", 50, 40, 4),' + # 4 = UPGRADABLE
+             '("b", "0.2.0", "system package", "GPL", "0.3.0", "url", 50, 40, 5),' + # 5 = DOWNGRADABLE
              ']'),
             ('UpgradePackage', 's', '', ''),
         ])
