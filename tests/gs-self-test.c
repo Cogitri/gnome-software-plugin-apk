@@ -226,12 +226,12 @@ main (int argc, char **argv)
   xml = g_strdup ("<?xml version=\"1.0\"?>\n"
                   "<components version=\"0.9\">\n"
                   "  <component type=\"desktop\">\n"
-                  "    <id>a.desktop</id>\n"
-                  "    <name>a</name>\n"
-                  "    <pkgname>a</pkgname>\n"
+                  "    <id>apk-test-app.desktop</id>\n"
+                  "    <name>apk-test-app</name>\n"
+                  "    <pkgname>apk-test-app</pkgname>\n"
                   "  </component>\n"
                   "  <info>\n"
-                  "    <scope>user</scope>\n"
+                  "    <scope>system</scope>\n"
                   "  </info>\n"
                   "</components>\n");
   g_setenv ("GS_SELF_TEST_APPSTREAM_XML", xml, TRUE);
