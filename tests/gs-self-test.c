@@ -52,6 +52,7 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
   g_assert_cmpstr (gs_app_get_management_plugin (repo), ==, "apk");
 
   // Remove repository
+  g_object_unref (plugin_job);
   plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_REMOVE_REPO,
                                    "app", repo,
                                    NULL);
@@ -67,6 +68,7 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
   g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_AVAILABLE);
 
   // gs_plugin_install_repo (reinstall it, check it works)
+  g_object_unref (plugin_job);
   plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_INSTALL_REPO,
                                    "app", repo,
                                    NULL);
@@ -81,6 +83,7 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
 
   // Refresh repos.
   // TODO: Check logs!
+  g_object_unref (plugin_job);
   plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_REFRESH, NULL);
   rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
@@ -136,6 +139,7 @@ gs_plugins_apk_updates (GsPluginLoader *plugin_loader)
   // Execute update!
   foreign_app = gs_app_new ("foreign");
   gs_app_list_add (update_list, foreign_app); // No management plugin, should get ignored!
+  g_object_unref (plugin_job);
   plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_UPDATE,
                                    "list", update_list,
                                    NULL);
