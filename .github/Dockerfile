@@ -6,7 +6,7 @@ RUN apk add --no-cache meson gnome-software-dev apk-polkit-rs-dev build-base cur
     ostree-dev flatpak-dev libgudev-dev gnome-online-accounts-dev appstream-dev
 RUN curl -L -O https://gitlab.gnome.org/pabloyoyoista/gnome-software/-/archive/alpine-patch/gnome-software-alpine-patch.tar.gz \
     && tar xf gnome-software-alpine-patch.tar.gz \
-    && cd gnome-software-41.2 \
+    && cd gnome-software-alpine-patch \
     && meson -Dvalgrind=false -Dmalcontent=false -Dpackagekit=false -Dfwupd=false build \
     && DESTDIR=/ ninja -C build install
 RUN apk add --no-cache py3-dbusmock
