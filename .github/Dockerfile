@@ -7,7 +7,16 @@ RUN apk add --no-cache meson gnome-software-dev apk-polkit-rs-dev build-base cur
 RUN curl -L -O https://gitlab.gnome.org/pabloyoyoista/gnome-software/-/archive/alpine-patch/gnome-software-alpine-patch.tar.gz \
     && tar xf gnome-software-alpine-patch.tar.gz \
     && cd gnome-software-alpine-patch \
-    && meson -Dvalgrind=false -Dmalcontent=false -Dpackagekit=false -Dfwupd=false build \
+    && meson \
+       -Dvalgrind=false \
+       -Dmalcontent=false \
+       -Dpackagekit=false \
+       -Dfwupd=false \
+       -Dflatpak=false \
+       -Dgtk_doc=false \
+       -Dman=false \
+       -Dtests=false \
+        build \
     && DESTDIR=/ ninja -C build install
 RUN apk add --no-cache py3-dbusmock
 LABEL org.opencontainers.image.source="https://github.com/Cogitri/gnome-software-plugin-apk"
