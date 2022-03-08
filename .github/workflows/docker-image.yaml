@@ -1,0 +1,38 @@
+name: Build container test image
+on:
+  push:
+    paths:
+      - .github/Dockerfile
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: cogitri/gnome-software-plugin-apk-ci
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: cogitri
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: type=raw,value=41
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .github/
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
