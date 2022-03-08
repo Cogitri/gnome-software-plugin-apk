@@ -5,7 +5,7 @@ jobs:
   test:
     name: Tests
     container:
-      image: ghcr.io/cogitri/gnome-software-plugin-apk-ci:latest
+      image: ghcr.io/cogitri/gnome-software-plugin-apk-ci:41
       credentials:
         username: cogitri
         password: ${{ secrets.DOCKER_TOKEN }}
