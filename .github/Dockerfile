@@ -8,6 +8,7 @@ RUN curl -L -O https://gitlab.gnome.org/pabloyoyoista/gnome-software/-/archive/a
     && tar xf gnome-software-alpine-patch.tar.gz \
     && cd gnome-software-alpine-patch \
     && meson \
+       --prefix /usr \
        -Dvalgrind=false \
        -Dmalcontent=false \
        -Dpackagekit=false \
@@ -17,6 +18,6 @@ RUN curl -L -O https://gitlab.gnome.org/pabloyoyoista/gnome-software/-/archive/a
        -Dman=false \
        -Dtests=false \
         build \
-    && DESTDIR=/ ninja -C build install
+    && meson install -C build
 RUN apk add --no-cache py3-dbusmock
 LABEL org.opencontainers.image.source="https://github.com/Cogitri/gnome-software-plugin-apk"
