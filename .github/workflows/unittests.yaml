@@ -1,5 +1,8 @@
 name: Run tests
-on: pull_request_target
+on:
+  pull_request_target:
+    paths-ignore:
+      - .github/Dockerfile # There is no reason to run if the container was updated
 
 jobs:
   test:
