@@ -588,57 +588,34 @@ fix_app_missing_appstream (GsPlugin *plugin,
 {
   g_autoptr (GError) error = NULL;
   g_autoptr (GVariant) search_result = NULL;
-  gchar *fn;
+  const gchar *fn = NULL;
   GsPluginData *priv = gs_plugin_get_data (plugin);
-  const gchar *tmp = gs_app_get_id (app);
   ApkdPackage package;
 
-  g_debug ("Trying to find desktop/appstream file for app %s", gs_app_get_unique_id (app));
-
-  /* FIXME: Ideally we'd use gs_app_get_metadata("appstream::source-file") but apparently that's not realiable */
-  /* Is there a desktop file ? */
-  if (g_strrstr (tmp, ".desktop") == NULL)
+  /* The appstream plugin sets some metadata on apps that come from desktop
+   * and metainfo files. If metadata is missing, just give-up */
+  fn = gs_app_get_metadata_item (app, "appstream::source-file");
+  if (fn == NULL)
     {
-      fn = g_strdup_printf ("/usr/share/applications/%s.desktop", tmp);
-    }
-  else
-    {
-      fn = g_strdup_printf ("/usr/share/applications/%s", tmp);
-    }
-  /* If there is no desktop file (or it doesn't match $id.desktop), is there an appdata file? */
-  if (!g_file_test (fn, G_FILE_TEST_EXISTS))
-    {
-      fn = g_strdup_printf ("/usr/share/metainfo/%s.metainfo.xml", tmp);
-      if (!g_file_test (fn, G_FILE_TEST_EXISTS))
-        {
-          fn = g_strdup_printf ("/usr/share/metainfo/%s.appdata.xml", tmp);
-          if (!g_file_test (fn, G_FILE_TEST_EXISTS))
-            {
-              fn = g_strdup_printf ("/usr/share/appdata/%s.appdata.xml", tmp);
-            }
-        }
-    }
-
-  if (!g_file_test (fn, G_FILE_TEST_EXISTS))
-    {
-      g_error ("No desktop or appstream file found for app %s", gs_app_get_unique_id (app));
+      g_warning ("Couldn't find 'appstream::source-file' metadata for %s",
+                 gs_app_get_unique_id (app));
       return FALSE;
     }
-
-  g_debug ("Found desktop/appstream file %s for app %s", fn, gs_app_get_unique_id (app));
 
   if (!apk_polkit1_call_search_file_owner_sync (priv->proxy, fn, &search_result, cancellable, &error))
     {
       if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
         {
           g_dbus_error_strip_remote_error (error);
-          g_warning ("Couldn't find any matches for metainfo file '%s': %s", fn, error->message);
-          g_clear_error (&error);
+          g_warning ("Couldn't find any package owning file '%s': %s",
+                     fn, error->message);
         }
       return FALSE;
     }
 
   package = g_variant_to_apkd_package (search_result);
+  g_debug ("Found pkgname '%s' for app %s", package.m_name,
+           gs_app_get_unique_id (app));
   gs_app_add_source (app, package.m_name);
 
   return TRUE;
