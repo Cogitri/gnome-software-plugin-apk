@@ -643,6 +643,7 @@ refine_apk_package (GsPlugin *plugin,
   GsPluginData *priv = gs_plugin_get_data (plugin);
   const gchar *source = gs_app_get_source_default (app);
 
+  g_debug ("Refining %s", gs_app_get_unique_id (app));
   if (!apk_polkit1_call_get_package_details_sync (priv->proxy, source, &apk_package, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
@@ -719,7 +720,10 @@ gs_plugin_refine (GsPlugin *plugin,
         }
 
       if (g_strcmp0 (gs_app_get_management_plugin (app), gs_plugin_get_name (plugin)) != 0)
-        continue;
+        {
+          g_debug ("Ignoring app %s, not owned by apk", gs_app_get_unique_id (app));
+          continue;
+        }
 
       sources = gs_app_get_sources (app);
       if (sources->len == 0)
