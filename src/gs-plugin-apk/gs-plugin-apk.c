@@ -508,7 +508,8 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
     {
       gs_app_set_version (app, package->m_version);
     }
-  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN)
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN &&
+      gs_app_get_origin (app) == NULL)
     {
       gs_app_set_origin (app, "alpine");
     }
@@ -532,7 +533,8 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
   if (flags & GS_PLUGIN_REFINE_FLAGS_DEFAULT)
     {
       gs_app_set_version (app, package->m_version);
-      gs_app_set_origin (app, "alpine");
+      if (gs_app_get_origin (app) == NULL)
+        gs_app_set_origin (app, "alpine");
       gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
       gs_app_set_size_download (app, package->m_size);
       gs_app_set_size_installed (app, package->m_installedSize);
