@@ -1,20 +1,22 @@
 name: Run tests
 on:
-  pull_request_target:
+  pull_request:
     paths-ignore:
       - .github/Dockerfile # There is no reason to run if the container was updated
 
 jobs:
   test:
     name: Tests
+    permissions:
+      packages: read
     container:
       image: ghcr.io/cogitri/gnome-software-plugin-apk-ci:41
       credentials:
         username: cogitri
-        password: ${{ secrets.DOCKER_TOKEN }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
 
       - name: Build
         run: meson build && ninja -C build
