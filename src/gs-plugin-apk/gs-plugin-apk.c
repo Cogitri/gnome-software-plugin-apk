@@ -264,7 +264,7 @@ gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
 
 gboolean
 gs_plugin_refresh (GsPlugin *plugin,
-                   guint cache_age,
+                   guint64 cache_age_secs,
                    GCancellable *cancellable,
                    GError **error)
 {
