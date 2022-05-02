@@ -50,7 +50,7 @@ typedef struct
  * g_variant_to_apkd_package:
  * @value_tuple: a GVariant, as received from apk_polkit1_call*
  *
- * Convenience finction which conerts a GVariant we get pack from our DBus
+ * Convenience function which converts a GVariant pack we get from our DBus
  * proxy to a ApkdPackage
  **/
 static ApkdPackage
