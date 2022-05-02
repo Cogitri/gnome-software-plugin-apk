@@ -22,7 +22,7 @@ plugin_apk_lib = shared_library(
   install : true,
   install_dir: plugin_install_dir,
   c_args : cargs,
-  dependencies : [ gnome_software_dep, apk_dep, glib_dep,  gobject_dep, gio_dep, appstream_dep],
+  dependencies : [ gnome_software_dep, apk_dep, glib_dep, gobject_dep, gio_dep, appstream_dep ],
 )
 
 install_data(
