@@ -26,6 +26,7 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
   g_autoptr (GError) error = NULL;
   g_autoptr (GsPluginJob) plugin_job = NULL;
   g_autoptr (GsAppList) list = NULL;
+  g_autoptr (GsPlugin) plugin = NULL;
   GsApp *repo = NULL;
   gboolean rc;
 
@@ -39,17 +40,20 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
   // Verify correctness of result. TODO: for loop and check app name
   g_assert_cmpint (gs_app_list_length (list), ==, 3);
   repo = gs_app_list_index (list, 0);
+  plugin = GS_PLUGIN (gs_app_dup_management_plugin (repo));
   g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
   g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_INSTALLED);
-  g_assert_cmpstr (gs_app_get_management_plugin (repo), ==, "apk");
+  g_assert_cmpstr (gs_plugin_get_name (plugin), ==, "apk");
   repo = gs_app_list_index (list, 1);
+  plugin = GS_PLUGIN (gs_app_dup_management_plugin (repo));
   g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
   g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_AVAILABLE);
-  g_assert_cmpstr (gs_app_get_management_plugin (repo), ==, "apk");
+  g_assert_cmpstr (gs_plugin_get_name (plugin), ==, "apk");
   repo = gs_app_list_index (list, 2);
+  plugin = GS_PLUGIN (gs_app_dup_management_plugin (repo));
   g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
   g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_INSTALLED);
-  g_assert_cmpstr (gs_app_get_management_plugin (repo), ==, "apk");
+  g_assert_cmpstr (gs_plugin_get_name (plugin), ==, "apk");
 
   // Remove repository
   g_object_unref (plugin_job);
@@ -167,6 +171,7 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
   g_autoptr (GError) error = NULL;
   g_autoptr (GsPluginJob) plugin_job = NULL;
   g_autoptr (GsApp) app = NULL;
+  g_autoptr (GsPlugin) plugin = NULL;
   gboolean rc;
 
   // Search for a non-installed app
@@ -179,10 +184,11 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
   gs_test_flush_main_context ();
   g_assert_no_error (error);
   g_assert (app != NULL);
+  plugin = GS_PLUGIN (gs_app_dup_management_plugin (app));
 
   // make sure we got the correct app and is managed by us
   g_assert_cmpstr (gs_app_get_id (app), ==, "apk-test-app.desktop");
-  g_assert_cmpstr (gs_app_get_management_plugin (app), ==, "apk");
+  g_assert_cmpstr (gs_plugin_get_name (plugin), ==, "apk");
   g_assert_cmpint (gs_app_get_kind (app), ==, AS_COMPONENT_KIND_DESKTOP_APP);
   g_assert_cmpint (gs_app_get_scope (app), ==, AS_COMPONENT_SCOPE_SYSTEM);
   g_assert_cmpint (gs_app_get_state (app), ==, GS_APP_STATE_AVAILABLE);
