@@ -530,17 +530,9 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package, GsPluginRe
     {
       gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, package->m_license);
     }
-  if (flags & GS_PLUGIN_REFINE_FLAGS_DEFAULT)
-    {
-      gs_app_set_version (app, package->m_version);
-      if (gs_app_get_origin (app) == NULL)
-        gs_app_set_origin (app, "alpine");
-      gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, package->m_description);
-      gs_app_set_size_download (app, package->m_size);
-      gs_app_set_size_installed (app, package->m_installedSize);
-      gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, package->m_url);
-      gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, package->m_license);
-    }
+  if (flags & GS_PLUGIN_REFINE_FLAGS_NONE)
+    return;
+
   g_debug ("State for pkg %s: %u", gs_app_get_unique_id (app), package->m_packageState);
   /* FIXME: Currently apk-rs-polkit only returns states Available and Installed
    * regardless of whether the packages are in a different state like upgraded.
@@ -746,8 +738,7 @@ gs_plugin_refine (GsPlugin *plugin,
            GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
            GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
            GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE |
-           GS_PLUGIN_REFINE_FLAGS_DEFAULT))
+           GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE))
         {
           if (!refine_apk_package (plugin, app, flags, cancellable, error))
             return FALSE;
