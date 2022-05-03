@@ -280,7 +280,7 @@ main (int argc, char **argv)
   gs_plugin_loader_add_location (plugin_loader, LOCALPLUGINDIR);
   gs_plugin_loader_add_location (plugin_loader, SYSTEMPLUGINDIR);
   ret = gs_plugin_loader_setup (plugin_loader,
-                                (gchar **) allowlist,
+                                allowlist,
                                 NULL,
                                 NULL,
                                 &error);
