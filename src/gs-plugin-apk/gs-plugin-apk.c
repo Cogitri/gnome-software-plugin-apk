@@ -434,7 +434,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
 
 gboolean
 gs_plugin_update (GsPlugin *plugin,
-                  GsAppList *apps,
+                  GsAppList *list,
                   GCancellable *cancellable,
                   GError **error)
 {
@@ -444,10 +444,10 @@ gs_plugin_update (GsPlugin *plugin,
   GsApp *app;
 
   gs_app_set_progress (app_dl, GS_APP_PROGRESS_UNKNOWN);
-  for (guint i = 0; i < gs_app_list_length (apps); i++)
+  for (guint i = 0; i < gs_app_list_length (list); i++)
     {
       gboolean is_proxy;
-      app = gs_app_list_index (apps, i);
+      app = gs_app_list_index (list, i);
 
       is_proxy = gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY);
 
@@ -601,8 +601,7 @@ fix_app_missing_appstream (GsPlugin *plugin,
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GError) error = NULL;
   g_autoptr (GVariant) search_result = NULL;
-  gchar *fn;
-  const gchar *tmp = gs_app_get_id (app);
+  const gchar *fn;
   ApkdPackage package;
 
   /* The appstream plugin sets some metadata on apps that come from desktop
@@ -654,17 +653,12 @@ refine_apk_package (GsPlugin *plugin,
                     GError **error)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GVariant) matching_package = NULL;
-  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GVariant) apk_package = NULL;
   const gchar *source = gs_app_get_source_default (app);
   g_debug ("Refining %s", gs_app_get_unique_id (app));
 
-  if (!apk_polkit1_call_get_package_details_sync (self->proxy, source, &matching_package, cancellable, &local_error))
-    {
-      g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
-      return FALSE;
-    }
+  if (!apk_polkit1_call_get_package_details_sync (self->proxy, source, &apk_package, cancellable, error))
+    return FALSE;
 
   ApkdPackage pkg = g_variant_to_apkd_package (apk_package);
 
@@ -676,18 +670,39 @@ refine_apk_package (GsPlugin *plugin,
   return TRUE;
 }
 
-gboolean
-gs_plugin_refine (GsPlugin *plugin,
-                  GsAppList *apps,
-                  GsPluginRefineFlags flags,
-                  GCancellable *cancellable,
-                  GError **error)
+static gboolean
+gs_plugin_apk_refine_finish (GsPlugin      *plugin,
+                             GAsyncResult  *result,
+                             GError       **error)
 {
+  return g_task_propagate_boolean (G_TASK (result), error);
+}
+
+static void
+gs_plugin_apk_refine_async (GsPlugin            *plugin,
+                            GsAppList           *list,
+                            GsPluginRefineFlags  flags,
+                            GCancellable        *cancellable,
+                            GAsyncReadyCallback  callback,
+                            gpointer             user_data)
+{
+  g_autoptr (GTask) task = NULL;
+  g_autoptr (GError) error = NULL;
+
+  task = g_task_new (plugin, cancellable, callback, user_data);
+  g_task_set_source_tag (task, gs_plugin_apk_refine_async);
+
+  if (flags == GS_PLUGIN_REFINE_FLAGS_NONE)
+    {
+      g_task_return_boolean (task, TRUE);
+      return;
+    }
+
   g_debug ("Starting refinining process");
 
-  for (guint i = 0; i < gs_app_list_length (apps); i++)
+  for (guint i = 0; i < gs_app_list_length (list); i++)
     {
-      GsApp *app = gs_app_list_index (apps, i);
+      GsApp *app = gs_app_list_index (list, i);
       GPtrArray *sources;
       AsBundleKind bundle_kind = gs_app_get_bundle_kind (app);
 
@@ -709,7 +724,7 @@ gs_plugin_refine (GsPlugin *plugin,
         }
 
       /* set management plugin for system apps just created by appstream */
-      if (gs_app_get_management_plugin (app) == NULL &&
+      if (gs_app_has_management_plugin (app, NULL) &&
           gs_app_get_scope (app) == AS_COMPONENT_SCOPE_SYSTEM &&
           g_strcmp0 (gs_app_get_metadata_item (app, "GnomeSoftware::Creator"), "appstream") == 0)
         {
@@ -724,7 +739,10 @@ gs_plugin_refine (GsPlugin *plugin,
               if (!fix_app_missing_appstream (plugin, app, cancellable))
                 {
                   if (g_cancellable_is_cancelled (cancellable))
-                    return FALSE;
+		    {
+                      g_task_return_boolean (task, TRUE);
+                      return;
+		    }
                   else
                     continue;
                 }
@@ -734,7 +752,7 @@ gs_plugin_refine (GsPlugin *plugin,
           gs_app_set_management_plugin (app, plugin);
         }
 
-      if (g_strcmp0 (gs_app_get_management_plugin (app), gs_plugin_get_name (plugin)) != 0)
+      if (!gs_app_has_management_plugin (app, plugin))
         {
           g_debug ("Ignoring app %s, not owned by apk", gs_app_get_unique_id (app));
           continue;
@@ -761,12 +779,15 @@ gs_plugin_refine (GsPlugin *plugin,
            GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
            GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE))
         {
-          if (!refine_apk_package (plugin, app, flags, cancellable, error))
-            return FALSE;
+          if (!refine_apk_package (plugin, app, flags, cancellable, &error))
+            {
+              g_task_return_error (task, error);
+	      return;
+	  }
         }
     }
 
-  return TRUE;
+  g_task_return_boolean (task, TRUE);
 }
 
 gboolean
@@ -959,6 +980,9 @@ gs_plugin_apk_class_init (GsPluginApkClass *klass)
 
   plugin_class->setup_async = gs_plugin_apk_setup_async;
   plugin_class->setup_finish = gs_plugin_apk_setup_finish;
+  plugin_class->refine_async = gs_plugin_apk_refine_async;
+  plugin_class->refine_finish = gs_plugin_apk_refine_finish;
+
 }
 
 GType
