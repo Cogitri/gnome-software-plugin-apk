@@ -280,34 +280,48 @@ gs_plugin_apk_setup_async (GsPlugin            *plugin,
   g_task_return_boolean (task, TRUE);
 }
 
-gboolean
-gs_plugin_refresh (GsPlugin *plugin,
-                   guint64 cache_age_secs,
-                   GCancellable *cancellable,
-                   GError **error)
+static gboolean
+gs_plugin_apk_refresh_metadata_finish (GsPlugin      *plugin,
+                                       GAsyncResult  *result,
+                                       GError       **error)
+{
+  return g_task_propagate_boolean (G_TASK (result), error);
+}
+
+static void
+gs_plugin_apk_refresh_metadata_async (GsPlugin                     *plugin,
+                                      guint64                       cache_age_secs,
+                                      GsPluginRefreshMetadataFlags  flags,
+                                      GCancellable                 *cancellable,
+                                      GAsyncReadyCallback           callback,
+                                      gpointer                      user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GTask) task = NULL;
+  g_autoptr (GError) error = NULL;
   g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
   self->current_app = app_dl;
+
+  task = g_task_new (plugin, cancellable, callback, user_data);
+  g_task_set_source_tag (task, gs_plugin_apk_refresh_metadata_async);
 
   g_debug ("Refreshing repositories");
 
   gs_app_set_summary_missing (app_dl, _ ("Getting apk repository indexes…"));
   gs_plugin_status_update (plugin, app_dl, GS_PLUGIN_STATUS_DOWNLOADING);
-  if (apk_polkit1_call_update_repositories_sync (self->proxy, cancellable, &local_error))
+  if (apk_polkit1_call_update_repositories_sync (self->proxy, cancellable, &error))
     {
       gs_app_set_progress (app_dl, 100);
       self->current_app = NULL;
       gs_plugin_updates_changed (plugin);
-      return TRUE;
+      g_task_return_boolean (task, TRUE);
+      return;
     }
   else
     {
-      g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
       self->current_app = NULL;
-      return FALSE;
+      g_task_return_error (task, error);
+      return;
     }
 }
 
@@ -982,7 +996,8 @@ gs_plugin_apk_class_init (GsPluginApkClass *klass)
   plugin_class->setup_finish = gs_plugin_apk_setup_finish;
   plugin_class->refine_async = gs_plugin_apk_refine_async;
   plugin_class->refine_finish = gs_plugin_apk_refine_finish;
-
+  plugin_class->refresh_metadata_async = gs_plugin_apk_refresh_metadata_async;
+  plugin_class->refresh_metadata_finish = gs_plugin_apk_refresh_metadata_finish;
 }
 
 GType
