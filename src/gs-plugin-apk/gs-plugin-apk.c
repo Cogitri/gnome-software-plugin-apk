@@ -235,11 +235,26 @@ gs_plugin_apk_init (GsPluginApk *self)
   self->current_app = NULL;
 }
 
-gboolean
-gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
+static gboolean
+gs_plugin_apk_setup_finish (GsPlugin      *plugin,
+                            GAsyncResult  *result,
+                            GError       **error)
+{
+  return g_task_propagate_boolean (G_TASK (result), error);
+}
+
+static void
+gs_plugin_apk_setup_async (GsPlugin            *plugin,
+                           GCancellable        *cancellable,
+                           GAsyncReadyCallback  callback,
+                           gpointer             user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GError) error = NULL;
+  g_autoptr(GTask) task = NULL;
+
+  task = g_task_new (plugin, cancellable, callback, user_data);
+  g_task_set_source_tag (task, gs_plugin_apk_setup_async);
 
   g_debug ("Initializing plugin");
 
@@ -248,13 +263,13 @@ gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
                                                     "dev.Cogitri.apkPolkit1",
                                                     "/dev/Cogitri/apkPolkit1",
                                                     cancellable,
-                                                    &local_error);
+                                                    &error);
 
-  if (local_error != NULL)
+  if (error != NULL)
     {
-      g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
-      return FALSE;
+      g_dbus_error_strip_remote_error (error);
+      g_task_return_error (task, error);
+      return;
     }
 
   // FIXME: Instead of disabling the timeout here, apkd should have an async API.
@@ -262,7 +277,7 @@ gs_plugin_setup (GsPlugin *plugin, GCancellable *cancellable, GError **error)
 
   g_signal_connect (self->proxy, "g-signal", G_CALLBACK (apk_progress_signal_connect_callback), plugin);
 
-  return TRUE;
+  g_task_return_boolean (task, TRUE);
 }
 
 gboolean
@@ -940,6 +955,10 @@ gs_plugin_remove_repo (GsPlugin *plugin,
 static void
 gs_plugin_apk_class_init (GsPluginApkClass *klass)
 {
+  GsPluginClass *plugin_class = GS_PLUGIN_CLASS (klass);
+
+  plugin_class->setup_async = gs_plugin_apk_setup_async;
+  plugin_class->setup_finish = gs_plugin_apk_setup_finish;
 }
 
 GType
