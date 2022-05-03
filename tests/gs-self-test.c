@@ -88,7 +88,7 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
   // Refresh repos.
   // TODO: Check logs!
   g_object_unref (plugin_job);
-  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_REFRESH, NULL);
+  plugin_job = gs_plugin_job_refresh_metadata_new (G_MAXUINT64, GS_PLUGIN_REFRESH_METADATA_FLAGS_NONE);
   rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
