@@ -5,12 +5,12 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+#include "gs-plugin-apk.h"
 #include <apk-polkit-1/apk-polkit-client.h>
 #include <appstream.h>
 #include <gnome-software.h>
 #include <libintl.h>
 #include <locale.h>
-#include "gs-plugin-apk.h"
 #define _(string) gettext (string)
 
 /**
@@ -236,22 +236,22 @@ gs_plugin_apk_init (GsPluginApk *self)
 }
 
 static gboolean
-gs_plugin_apk_setup_finish (GsPlugin      *plugin,
-                            GAsyncResult  *result,
-                            GError       **error)
+gs_plugin_apk_setup_finish (GsPlugin *plugin,
+                            GAsyncResult *result,
+                            GError **error)
 {
   return g_task_propagate_boolean (G_TASK (result), error);
 }
 
 static void
-gs_plugin_apk_setup_async (GsPlugin            *plugin,
-                           GCancellable        *cancellable,
-                           GAsyncReadyCallback  callback,
-                           gpointer             user_data)
+gs_plugin_apk_setup_async (GsPlugin *plugin,
+                           GCancellable *cancellable,
+                           GAsyncReadyCallback callback,
+                           gpointer user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GError) error = NULL;
-  g_autoptr(GTask) task = NULL;
+  g_autoptr (GTask) task = NULL;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_setup_async);
@@ -281,20 +281,20 @@ gs_plugin_apk_setup_async (GsPlugin            *plugin,
 }
 
 static gboolean
-gs_plugin_apk_refresh_metadata_finish (GsPlugin      *plugin,
-                                       GAsyncResult  *result,
-                                       GError       **error)
+gs_plugin_apk_refresh_metadata_finish (GsPlugin *plugin,
+                                       GAsyncResult *result,
+                                       GError **error)
 {
   return g_task_propagate_boolean (G_TASK (result), error);
 }
 
 static void
-gs_plugin_apk_refresh_metadata_async (GsPlugin                     *plugin,
-                                      guint64                       cache_age_secs,
-                                      GsPluginRefreshMetadataFlags  flags,
-                                      GCancellable                 *cancellable,
-                                      GAsyncReadyCallback           callback,
-                                      gpointer                      user_data)
+gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
+                                      guint64 cache_age_secs,
+                                      GsPluginRefreshMetadataFlags flags,
+                                      GCancellable *cancellable,
+                                      GAsyncReadyCallback callback,
+                                      gpointer user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GTask) task = NULL;
@@ -685,20 +685,20 @@ refine_apk_package (GsPlugin *plugin,
 }
 
 static gboolean
-gs_plugin_apk_refine_finish (GsPlugin      *plugin,
-                             GAsyncResult  *result,
-                             GError       **error)
+gs_plugin_apk_refine_finish (GsPlugin *plugin,
+                             GAsyncResult *result,
+                             GError **error)
 {
   return g_task_propagate_boolean (G_TASK (result), error);
 }
 
 static void
-gs_plugin_apk_refine_async (GsPlugin            *plugin,
-                            GsAppList           *list,
-                            GsPluginRefineFlags  flags,
-                            GCancellable        *cancellable,
-                            GAsyncReadyCallback  callback,
-                            gpointer             user_data)
+gs_plugin_apk_refine_async (GsPlugin *plugin,
+                            GsAppList *list,
+                            GsPluginRefineFlags flags,
+                            GCancellable *cancellable,
+                            GAsyncReadyCallback callback,
+                            gpointer user_data)
 {
   g_autoptr (GTask) task = NULL;
   g_autoptr (GError) error = NULL;
@@ -753,10 +753,10 @@ gs_plugin_apk_refine_async (GsPlugin            *plugin,
               if (!fix_app_missing_appstream (plugin, app, cancellable))
                 {
                   if (g_cancellable_is_cancelled (cancellable))
-		    {
+                    {
                       g_task_return_boolean (task, TRUE);
                       return;
-		    }
+                    }
                   else
                     continue;
                 }
@@ -796,8 +796,8 @@ gs_plugin_apk_refine_async (GsPlugin            *plugin,
           if (!refine_apk_package (plugin, app, flags, cancellable, &error))
             {
               g_task_return_error (task, error);
-	      return;
-	  }
+              return;
+            }
         }
     }
 
