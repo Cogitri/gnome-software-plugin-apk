@@ -1,13 +1,13 @@
- /* 
-  * Copyright (C) 2022 Dylan Van Assche <me@dylanvanassche.be>
-  *
-  * SPDX-License-Identifier: GPL-2.0+
-  */
+/*
+ * Copyright (C) 2022 Dylan Van Assche <me@dylanvanassche.be>
+ *
+ * SPDX-License-Identifier: GPL-2.0+
+ */
 
 #pragma once
 
-#include <glib.h>
 #include <glib-object.h>
+#include <glib.h>
 #include <gnome-software.h>
 
 G_BEGIN_DECLS
