@@ -238,6 +238,8 @@ main (int argc, char **argv)
    * Might be useful at some point though */
   g_assert_true (g_settings_set_strv (settings, "external-appstream-urls", NULL));
 
+  g_setenv ("GS_XMLB_VERBOSE", "1", TRUE);
+
   /* Adapted from upstream dummy/gs-self-test.c */
   xml = g_strdup ("<?xml version=\"1.0\"?>\n"
                   "<components version=\"0.9\">\n"
