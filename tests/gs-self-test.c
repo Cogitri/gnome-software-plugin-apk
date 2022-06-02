@@ -248,10 +248,11 @@ main (int argc, char **argv)
 
   /* Adapted from upstream dummy/gs-self-test.c */
   xml = g_strdup ("<?xml version=\"1.0\"?>\n"
-                  "<components version=\"0.9\">\n"
+                  "<components origin=\"alpine-test\" version=\"0.9\">\n"
                   "  <component type=\"desktop\">\n"
                   "    <id>apk-test-app.desktop</id>\n"
                   "    <name>apk-test-app</name>\n"
+                  "    <summary>Alpine Package Keeper test app</summary>\n"
                   "    <pkgname>apk-test-app</pkgname>\n"
                   "  </component>\n"
                   "  <info>\n"
