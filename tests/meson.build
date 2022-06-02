@@ -16,7 +16,6 @@ test = executable(
 test_env = [
   'G_TEST_SRCDIR=@0@'.format(meson.current_source_dir()),
   'G_TEST_BUILDDIR=@0@'.format(meson.current_build_dir()),
-  'GSETTINGS_BACKEND=memory',
   'MALLOC_CHECK_=2',
   'DBUS_TEST_LOG=@0@/@1@'.format(meson.current_build_dir(), 'dbus-test.log'),
 ]
