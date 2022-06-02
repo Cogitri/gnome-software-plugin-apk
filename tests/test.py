@@ -15,51 +15,18 @@ class GsPluginApkTest (DBusTestCase):
     @classmethod
     def setUpClass(klass):
         klass.start_system_bus()
-        klass.dbus_con = klass.get_dbus(system_bus=True)
 
     def setUp(self):
-        self.log = open(os.getenv('DBUS_TEST_LOG'), "w")
-        self.p_mock = self.spawn_server('dev.Cogitri.apkPolkit1',
-                                        '/dev/Cogitri/apkPolkit1',
-                                        'dev.Cogitri.apkPolkit1',
-                                        system_bus=True,
-                                        stdout=self.log)
-
-        self.apk_polkit_mock = dbus.Interface(self.dbus_con.
-                                              get_object('dev.Cogitri.apkPolkit1',
-                                                         '/dev/Cogitri/apkPolkit1'),
-                                              MOCK_IFACE)
-
-        self.apk_polkit_mock.AddMethods('', [
-            ('AddPackage', 's', '', ''),
-            ('DeletePackage', 's', '', ''),
-            ('ListRepositories', '', 'a(bss)', 'ret = [' +
-             '(True, "a", "https://alpine.org/alpine/edge/main"),' +
-             '(False, "b", "https://pmos.org/pmos/master"),' +
-             '(True, "c", "/home/data/foo/bar/baz"),' + ']'),
-            ('UpdateRepositories', '', '', ''),
-            ('AddRepository', 's', '', ''),
-            ('RemoveRepository', 's', '', ''),
-            ('ListUpgradablePackages', '', 'a(ssssssttu)', 'ret = [' +
-             '("apk-test-app", "0.2.0", "desktop app", "GPL", "0.1.0", "url", 50, 40, 4),' + # 4 = UPGRADABLE
-             '("b", "0.2.0", "system package", "GPL", "0.3.0", "url", 50, 40, 5),' + # 5 = DOWNGRADABLE
-             ']'),
-            ('UpgradePackage', 's', '', ''),
-            # We only expect to refine the desktop app for now.
-            # Ideally, the state should be updated on the different DBus calls
-            ('GetPackageDetails', 's', '(ssssssttu)', 'ret = ' +
-             '("apk-test-app", "0.2.0", "desktop app", "GPL", "0.1.0", "url", 50, 40, 2)' # 2 = AVAILABLE
-            ),
-            ('GetPackagesDetails', 'as', 'a(ssssssttu)', 'ret = ' +
-             '[("apk-test-app", "0.2.0", "desktop app", "GPL", "0.1.0", "url", 50, 40, 2),]' # 2 = AVAILABLE
-            ),
-        ])
-
+        self.log = None
+        if os.getenv('DBUS_TEST_LOG') is not None:
+            self.log = open(os.getenv('DBUS_TEST_LOG'), "w")
+        template = os.path.join(os.getenv('G_TEST_SRCDIR'), 'apkpolkit2.py')
+        (self.p_mock, _) = self.spawn_server_template(template,
+                                                      stdout=self.log)
 
     def tearDown(self):
-        self.log.close()
-        self.p_mock.terminate()
-        self.p_mock.wait()
+        if self.log is not None:
+            self.log.close()
 
     def test_apk(self):
         builddir = os.getenv('G_TEST_BUILDDIR')
