@@ -5,6 +5,7 @@
  */
 
 #include <gnome-software.h>
+#include <stdio.h>
 
 #include <gs-plugin-loader-sync.h>
 #include <gs-plugin-loader.h>
@@ -214,6 +215,35 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
   g_assert_cmpint (gs_app_get_state (app), ==, GS_APP_STATE_AVAILABLE);
 }
 
+static void
+gs_plugins_apk_timeout (GsPluginLoader *plugin_loader)
+{
+  g_autoptr (GsPluginJob) plugin_job = NULL;
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GCancellable) cancellable = g_cancellable_new ();
+  g_autoptr (GsApp) app = NULL;
+  gboolean rc;
+
+  g_autoptr (GsPlugin) plugin = gs_plugin_loader_find_plugin (plugin_loader, "apk");
+
+  app = gs_app_new ("cancel.test");
+
+  /* gs_app_set_management_plugin (app, "apk"); */
+  gs_app_set_management_plugin (app, plugin);
+  gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
+  gs_app_add_source (app, "slow");
+
+  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_INSTALL,
+                                   "app", app,
+                                   "timeout", 2,
+                                   NULL);
+  rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, cancellable, &error);
+
+  gs_test_flush_main_context ();
+  g_assert_error (error, GS_PLUGIN_ERROR, GS_PLUGIN_ERROR_TIMED_OUT);
+  g_assert_false (rc);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -296,6 +326,9 @@ main (int argc, char **argv)
   g_test_add_data_func ("/gnome-software/plugins/apk/app-install-remove",
                         plugin_loader,
                         (GTestDataFunc) gs_plugins_apk_app_install_remove);
+  g_test_add_data_func ("/gnome-software/plugins/apk/cancel",
+                        plugin_loader,
+                        (GTestDataFunc) gs_plugins_apk_timeout);
   retval = g_test_run ();
 
   /* Clean up. */
