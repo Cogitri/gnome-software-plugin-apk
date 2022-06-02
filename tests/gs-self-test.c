@@ -237,9 +237,9 @@ main (int argc, char **argv)
     NULL
   };
 
+  gs_test_init (&argc, &argv);
+
   settings = g_settings_new ("org.gnome.software");
-  /* Avoid connections to review server during tests */
-  g_assert_true (g_settings_set_string (settings, "review-server", ""));
   /* We do not want real data to pollute tests.
    * Might be useful at some point though */
   g_assert_true (g_settings_set_strv (settings, "external-appstream-urls", NULL));
@@ -257,21 +257,11 @@ main (int argc, char **argv)
                   "  </info>\n"
                   "</components>\n");
   g_setenv ("GS_SELF_TEST_APPSTREAM_XML", xml, TRUE);
-  g_setenv ("G_MESSAGES_DEBUG", "all", TRUE);
 
   /* Needed for appstream plugin to store temporary data! */
   tmp_root = g_dir_make_tmp ("gnome-software-apk-test-XXXXXX", NULL);
   g_assert_true (tmp_root != NULL);
   g_setenv ("GS_SELF_TEST_CACHEDIR", tmp_root, TRUE);
-
-  g_test_init (&argc, &argv,
-               G_TEST_OPTION_ISOLATE_DIRS,
-               NULL);
-
-  /* only critical and error are fatal */
-  g_log_set_fatal_mask (NULL, G_LOG_LEVEL_WARNING |
-                                  G_LOG_LEVEL_ERROR |
-                                  G_LOG_LEVEL_CRITICAL);
 
   /* we can only load this once per process */
   plugin_loader = gs_plugin_loader_new ();
