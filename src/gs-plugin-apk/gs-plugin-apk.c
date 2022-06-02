@@ -784,7 +784,6 @@ gs_plugin_add_sources (GsPlugin *plugin,
       g_autofree gchar *url = NULL;
       g_autofree gchar *url_path = NULL;
       g_autofree gchar *url_scheme = NULL;
-      gchar **repo_parts;
       g_autoptr (GsApp) app = NULL;
       g_autoptr (GVariant) value_tuple = NULL;
       gboolean enabled = FALSE;
@@ -809,20 +808,17 @@ gs_plugin_add_sources (GsPlugin *plugin,
       if (*error)
         return FALSE;
 
-      /* Regular repos will have at least 3 parts: distro, release and
-       * repository, e.g: /alpine/edge/community. We skip first '/'.
-       * Local repos can have more, but are stacked in the last value.*/
-      repo_parts = g_strsplit (url_path + 1, "/", 3);
-      {
-        g_autofree gchar *repo_id = g_strjoinv (".", repo_parts);
-        id = g_strconcat ("org.", repo_id, NULL);
-      }
+      /* Transform /some/repo/url into some.repo.url
+         We are not allowed to use '/' in the app id. */
+      id = g_strdelimit (g_strdup (url_path + 1), "/", '.');
 
       if (url_scheme)
         {
           /* If there is a scheme, it is a remote repository. Try to build
            * a description depending on the information available,
            * e.g: ["alpine", "edge", "community"] or ["postmarketos", "master"] */
+          gchar **repo_parts = g_strsplit (id, ".", 3);
+
           g_autofree gchar *repo = g_strdup (repo_parts[0]);
           if (g_strv_length (repo_parts) == 3)
             {
@@ -837,11 +833,11 @@ gs_plugin_add_sources (GsPlugin *plugin,
               release = g_strdup_printf (" (release %s)", repo_parts[1]);
             }
           repo_displayname = g_strdup_printf (_ ("Remote repository %s%s"), repo, release);
+          g_strfreev (repo_parts);
         }
       else
         {
-          g_autofree gchar *path = g_strjoinv ("/", repo_parts);
-          repo_displayname = g_strdup_printf (_ ("Local repository /%s"), path);
+          repo_displayname = g_strdup_printf (_ ("Local repository %s"), url_path);
         }
 
       app = gs_app_new (id);
@@ -856,8 +852,6 @@ gs_plugin_add_sources (GsPlugin *plugin,
       gs_app_set_management_plugin (app, "apk");
       gs_plugin_cache_add (plugin, url, app);
       gs_app_list_add (list, g_steal_pointer (&app));
-
-      g_strfreev (repo_parts);
     }
 
   g_debug ("Added repositories");
