@@ -50,6 +50,9 @@ class GsPluginApkTest (DBusTestCase):
             ('GetPackageDetails', 's', '(ssssssttu)', 'ret = ' +
              '("apk-test-app", "0.2.0", "desktop app", "GPL", "0.1.0", "url", 50, 40, 2)' # 2 = AVAILABLE
             ),
+            ('GetPackagesDetails', 'as', 'a(ssssssttu)', 'ret = ' +
+             '[("apk-test-app", "0.2.0", "desktop app", "GPL", "0.1.0", "url", 50, 40, 2),]' # 2 = AVAILABLE
+            ),
         ])
 
 

@@ -662,7 +662,7 @@ fix_app_missing_appstream (GsPlugin *plugin,
 /**
  * refine_apk_package:
  * @plugin: The apk GsPlugin.
- * @app: The app which we try to refine.
+ * @list: The list of apps to refine.
  * @flags: TheGsPluginRefineFlags which determine what data we add.
  * @cancellable: GCancellable to cancel resolving what app owns the appstream/desktop file.
  * @error: GError which is set if something goes wrong.
@@ -670,27 +670,48 @@ fix_app_missing_appstream (GsPlugin *plugin,
  * Get details from apk package for a specific app and fill-in requested refine data.
  **/
 static gboolean
-refine_apk_package (GsPlugin *plugin,
-                    GsApp *app,
-                    GsPluginRefineFlags flags,
-                    GCancellable *cancellable,
-                    GError **error)
+refine_apk_packages (GsPlugin *plugin,
+                     GsAppList *list,
+                     GsPluginRefineFlags flags,
+                     GCancellable *cancellable,
+                     GError **error)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GVariant) apk_package = NULL;
-  ApkdPackage pkg;
-  const gchar *source = gs_app_get_source_default (app);
-  g_debug ("Refining %s", gs_app_get_unique_id (app));
+  g_autofree const gchar **source_array = NULL;
+  g_autoptr (GVariant) apk_pkgs = NULL;
 
-  if (!apk_polkit1_call_get_package_details_sync (self->proxy, source, &apk_package, cancellable, error))
+  if (gs_app_list_length (list) == 0)
+    return TRUE;
+
+  source_array = g_new0 (const gchar *, gs_app_list_length (list) + 1);
+  for (int i = 0; i < gs_app_list_length (list); i++)
+    {
+      GsApp *app = gs_app_list_index (list, i);
+      source_array[i] = gs_app_get_source_default (app);
+    }
+
+  if (!apk_polkit1_call_get_packages_details_sync (self->proxy, source_array,
+                                                   &apk_pkgs, cancellable,
+                                                   error))
     return FALSE;
 
-  pkg = g_variant_to_apkd_package (apk_package);
+  for (int i = 0; i < gs_app_list_length (list); i++)
+    {
+      g_autoptr (GVariant) apk_pkg_variant = NULL;
+      GsApp *app = gs_app_list_index (list, i);
+      const gchar *source = gs_app_get_source_default (app);
+      ApkdPackage apk_pkg;
 
-  set_app_metadata (plugin, app, &pkg, flags);
-  /* We should only set generic apps for OS updates */
-  if (gs_app_get_kind (app) == AS_COMPONENT_KIND_GENERIC)
-    gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
+      g_debug ("Refining %s", gs_app_get_unique_id (app));
+      apk_pkg_variant = g_variant_get_child_value (apk_pkgs, i);
+      apk_pkg = g_variant_to_apkd_package (apk_pkg_variant);
+
+      g_assert (g_strcmp0 (source, apk_pkg.m_name) == 0);
+      set_app_metadata (plugin, app, &apk_pkg, flags);
+      /* We should only set generic apps for OS updates */
+      if (gs_app_get_kind (app) == AS_COMPONENT_KIND_GENERIC)
+        gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
+    }
 
   return TRUE;
 }
@@ -713,6 +734,7 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
 {
   g_autoptr (GTask) task = NULL;
   g_autoptr (GError) error = NULL;
+  g_autoptr (GsAppList) refine_apps_list = NULL;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_refine_async);
@@ -722,6 +744,8 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
       g_task_return_boolean (task, TRUE);
       return;
     }
+
+  refine_apps_list = gs_app_list_new ();
 
   g_debug ("Starting refinining process");
 
@@ -734,7 +758,7 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
       if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_WILDCARD) ||
           gs_app_get_kind (app) == AS_COMPONENT_KIND_REPOSITORY)
         {
-          g_debug ("App %s has quirk WILDCARD or is of REPOSITORY kind; skipping!", gs_app_get_unique_id (app));
+          g_debug ("App %s has quirk WILDCARD or is a repository; not refining!", gs_app_get_unique_id (app));
           continue;
         }
 
@@ -743,7 +767,7 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
       if (bundle_kind != AS_BUNDLE_KIND_UNKNOWN &&
           bundle_kind != AS_BUNDLE_KIND_PACKAGE)
         {
-          g_debug ("App %s has bundle kind %s; skipping!", gs_app_get_unique_id (app),
+          g_debug ("App %s has bundle kind %s; not refining!", gs_app_get_unique_id (app),
                    as_bundle_kind_to_string (bundle_kind));
           continue;
         }
@@ -795,20 +819,22 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
           continue;
         }
 
-      if (flags &
-          (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
-           GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE))
+      gs_app_list_add (refine_apps_list, app);
+    }
+
+  if (flags &
+      (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
+       GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE))
+    {
+      if (!refine_apk_packages (plugin, refine_apps_list, flags, cancellable, &error))
         {
-          if (!refine_apk_package (plugin, app, flags, cancellable, &error))
-            {
-              g_task_return_error (task, error);
-              return;
-            }
+          g_task_return_error (task, error);
+          return;
         }
     }
 
