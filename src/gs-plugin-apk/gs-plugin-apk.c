@@ -221,7 +221,7 @@ apk_progress_signal_connect_callback (GDBusProxy *proxy,
   gs_plugin_status_update ((GsPlugin *) user_data, self->current_app, plugin_status);
 }
 
-void
+static void
 gs_plugin_apk_init (GsPluginApk *self)
 {
   GsPlugin *plugin = GS_PLUGIN (self);
@@ -231,6 +231,18 @@ gs_plugin_apk_init (GsPluginApk *self)
   /* We want to get packages from appstream and refine them */
   gs_plugin_add_rule (plugin, GS_PLUGIN_RULE_RUN_AFTER, "appstream");
   self->current_app = NULL;
+  self->proxy = NULL;
+}
+
+static void
+gs_plugin_apk_dispose (GObject *object)
+{
+  GsPluginApk *self = GS_PLUGIN_APK (object);
+
+  g_clear_object (&self->current_app);
+  g_clear_object (&self->proxy);
+
+  G_OBJECT_CLASS (gs_plugin_apk_parent_class)->dispose (object);
 }
 
 static gboolean
@@ -983,7 +995,10 @@ gs_plugin_remove_repo (GsPlugin *plugin,
 static void
 gs_plugin_apk_class_init (GsPluginApkClass *klass)
 {
+  GObjectClass *object_class = G_OBJECT_CLASS (klass);
   GsPluginClass *plugin_class = GS_PLUGIN_CLASS (klass);
+
+  object_class->dispose = gs_plugin_apk_dispose;
 
   plugin_class->setup_async = gs_plugin_apk_setup_async;
   plugin_class->setup_finish = gs_plugin_apk_setup_finish;
