@@ -56,22 +56,18 @@ typedef struct
  * @value_tuple: a GVariant, as received from apk_polkit1_call*
  *
  * Convenience function which converts a GVariant pack we get from our DBus
- * proxy to a ApkdPackage
+ * proxy to a ApkdPackage. The returned value is just a temporary container
+ * referencing data in the input @value_tuple. The returned fields shall not
+ * be freed and can become invalid after @value_tuple is freed.
  **/
 static ApkdPackage
 g_variant_to_apkd_package (GVariant *value_tuple)
 {
-  ApkdPackage pkg = {
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 0), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 1), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 2), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 3), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 4), NULL),
-    g_variant_get_string (g_variant_get_child_value (value_tuple, 5), NULL),
-    g_variant_get_uint64 (g_variant_get_child_value (value_tuple, 6)),
-    g_variant_get_uint64 (g_variant_get_child_value (value_tuple, 7)),
-    g_variant_get_uint32 (g_variant_get_child_value (value_tuple, 8)),
-  };
+  ApkdPackage pkg;
+  g_variant_get (value_tuple, "(&s&s&s&s&s&sttu)",
+                 &pkg.m_name, &pkg.m_version, &pkg.m_description,
+                 &pkg.m_license, &pkg.m_oldVersion, &pkg.m_url,
+                 &pkg.m_installedSize, &pkg.m_size, &pkg.m_packageState);
   return pkg;
 }
 
@@ -670,13 +666,14 @@ refine_apk_package (GsPlugin *plugin,
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GVariant) apk_package = NULL;
+  ApkdPackage pkg;
   const gchar *source = gs_app_get_source_default (app);
   g_debug ("Refining %s", gs_app_get_unique_id (app));
 
   if (!apk_polkit1_call_get_package_details_sync (self->proxy, source, &apk_package, cancellable, error))
     return FALSE;
 
-  ApkdPackage pkg = g_variant_to_apkd_package (apk_package);
+  pkg = g_variant_to_apkd_package (apk_package);
 
   set_app_metadata (plugin, app, &pkg, flags);
   /* We should only set generic apps for OS updates */
