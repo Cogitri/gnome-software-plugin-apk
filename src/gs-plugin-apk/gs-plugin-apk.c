@@ -111,7 +111,9 @@ apk_to_app_state (ApkPackageState state)
 static GsApp *
 apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
 {
-  GsApp *app = gs_plugin_cache_lookup (plugin, g_strdup_printf ("%s-%s", pkg->m_name, pkg->m_version));
+  g_autofree gchar *cache_name = NULL;
+  cache_name = g_strdup_printf ("%s-%s", pkg->m_name, pkg->m_version);
+  GsApp *app = gs_plugin_cache_lookup (plugin, cache_name);
   if (app != NULL)
     {
       return app;
@@ -145,7 +147,7 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
     {
       gs_app_set_version (app, pkg->m_version);
     }
-  gs_plugin_cache_add (plugin, g_strdup_printf ("%s-%s", pkg->m_name, pkg->m_version), app);
+  gs_plugin_cache_add (plugin, cache_name, app);
 
   return app;
 }
