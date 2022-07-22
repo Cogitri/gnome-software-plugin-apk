@@ -260,7 +260,7 @@ gs_plugin_apk_setup_async (GsPlugin *plugin,
                            gpointer user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GError) error = NULL;
+  g_autoptr (GError) local_error = NULL;
   g_autoptr (GTask) task = NULL;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
@@ -273,12 +273,12 @@ gs_plugin_apk_setup_async (GsPlugin *plugin,
                                                     "dev.Cogitri.apkPolkit1",
                                                     "/dev/Cogitri/apkPolkit1",
                                                     cancellable,
-                                                    &error);
+                                                    &local_error);
 
-  if (error != NULL)
+  if (local_error != NULL)
     {
-      g_dbus_error_strip_remote_error (error);
-      g_task_return_error (task, error);
+      g_dbus_error_strip_remote_error (local_error);
+      g_task_return_error (task, g_steal_pointer (&local_error));
       return;
     }
 
@@ -308,7 +308,7 @@ gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GTask) task = NULL;
-  g_autoptr (GError) error = NULL;
+  g_autoptr (GError) local_error = NULL;
   g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
   self->current_app = app_dl;
 
@@ -319,7 +319,7 @@ gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
 
   gs_app_set_summary_missing (app_dl, _ ("Getting apk repository indexes…"));
   gs_plugin_status_update (plugin, app_dl, GS_PLUGIN_STATUS_DOWNLOADING);
-  if (apk_polkit1_call_update_repositories_sync (self->proxy, cancellable, &error))
+  if (apk_polkit1_call_update_repositories_sync (self->proxy, cancellable, &local_error))
     {
       gs_app_set_progress (app_dl, 100);
       self->current_app = NULL;
@@ -330,7 +330,7 @@ gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
   else
     {
       self->current_app = NULL;
-      g_task_return_error (task, error);
+      g_task_return_error (task, g_steal_pointer (&local_error));
       return;
     }
 }
@@ -623,7 +623,7 @@ fix_app_missing_appstream (GsPlugin *plugin,
                            GCancellable *cancellable)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GError) error = NULL;
+  g_autoptr (GError) local_error = NULL;
   g_autoptr (GVariant) search_result = NULL;
   const gchar *fn;
   ApkdPackage package;
@@ -640,13 +640,13 @@ fix_app_missing_appstream (GsPlugin *plugin,
 
   g_debug ("Found desktop/appstream file %s for app %s", fn, gs_app_get_unique_id (app));
 
-  if (!apk_polkit1_call_search_file_owner_sync (self->proxy, fn, &search_result, cancellable, &error))
+  if (!apk_polkit1_call_search_file_owner_sync (self->proxy, fn, &search_result, cancellable, &local_error))
     {
-      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+      if (!g_error_matches (local_error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
         {
-          g_dbus_error_strip_remote_error (error);
+          g_dbus_error_strip_remote_error (local_error);
           g_warning ("Couldn't find any package owning file '%s': %s",
-                     fn, error->message);
+                     fn, local_error->message);
         }
       return FALSE;
     }
@@ -712,7 +712,7 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
                             gpointer user_data)
 {
   g_autoptr (GTask) task = NULL;
-  g_autoptr (GError) error = NULL;
+  g_autoptr (GError) local_error = NULL;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_refine_async);
@@ -804,9 +804,9 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
            GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
            GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE))
         {
-          if (!refine_apk_package (plugin, app, flags, cancellable, &error))
+          if (!refine_apk_package (plugin, app, flags, cancellable, &local_error))
             {
-              g_task_return_error (task, error);
+              g_task_return_error (task, g_steal_pointer (&local_error));
               return;
             }
         }
