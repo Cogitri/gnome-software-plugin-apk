@@ -847,9 +847,7 @@ gs_plugin_add_sources (GsPlugin *plugin,
       gboolean enabled = FALSE;
 
       value_tuple = g_variant_get_child_value (repositories, i);
-      enabled = g_variant_get_boolean (g_variant_get_child_value (value_tuple, 0));
-      description = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 1), NULL));
-      url = g_strdup (g_variant_get_string (g_variant_get_child_value (value_tuple, 2), NULL));
+      g_variant_get (value_tuple, "(bss)", &enabled, &description, &url);
 
       app = gs_plugin_cache_lookup (GS_PLUGIN (self), url);
       if (app)
