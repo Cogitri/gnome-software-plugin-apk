@@ -13,15 +13,10 @@
 #include <locale.h>
 #define _(string) gettext (string)
 
-/**
-  Helper struct holding the current app (used to set progress) and
-  the GDBusProxy used to communicate with apk-polkit
-*/
 struct _GsPluginApk
 {
   GsPlugin parent;
 
-  GsApp *current_app;
   ApkPolkit1 *proxy;
 };
 
@@ -169,58 +164,6 @@ gs_plugin_apk_get_source (GsApp *app, GError **error)
   return g_strdup (g_ptr_array_index (sources, 0));
 }
 
-/**
- * apk_progress_signal_connect_callback:
- * @proxy: A GDBusProxy. Currently unused.
- * @sender_name: The name of the sender.
- * @signal_name: The name of the signal which we received.
- * @parameters: The return value of the signal.
- * @user_data: User data which we previously passed to g_signal_connect. It's our GsPlugin.
- *
- * Callback passed to g_signal_connect to update the current progress.
- */
-static void
-apk_progress_signal_connect_callback (GDBusProxy *proxy,
-                                      gchar *sender_name,
-                                      gchar *signal_name,
-                                      GVariant *parameters,
-                                      gpointer user_data)
-{
-  GsPluginApk *self = GS_PLUGIN_APK (user_data);
-  GsPluginStatus plugin_status = GS_PLUGIN_STATUS_DOWNLOADING;
-
-  /* We only act upon the progressNotification signal to set progress */
-  if (g_strcmp0 (signal_name, "progressNotification") != 0)
-    {
-      return;
-    }
-
-  /* nothing in progress */
-  if (self->current_app != NULL)
-    {
-      uint percentage =
-          g_variant_get_uint32 (g_variant_get_child_value (parameters, 0));
-
-      g_debug ("apk percentage for %s: %u%%",
-               gs_app_get_unique_id (self->current_app), percentage);
-      gs_app_set_progress (self->current_app, percentage);
-
-      switch (gs_app_get_state (self->current_app))
-        {
-        case GS_APP_STATE_INSTALLING:
-          plugin_status = GS_PLUGIN_STATUS_INSTALLING;
-          break;
-        case GS_APP_STATE_REMOVING:
-          plugin_status = GS_PLUGIN_STATUS_REMOVING;
-          break;
-        default:
-          break;
-        }
-    }
-
-  gs_plugin_status_update ((GsPlugin *) user_data, self->current_app, plugin_status);
-}
-
 static void
 gs_plugin_apk_init (GsPluginApk *self)
 {
@@ -230,7 +173,6 @@ gs_plugin_apk_init (GsPluginApk *self)
   gs_plugin_add_rule (plugin, GS_PLUGIN_RULE_RUN_BEFORE, "generic-updates");
   /* We want to get packages from appstream and refine them */
   gs_plugin_add_rule (plugin, GS_PLUGIN_RULE_RUN_AFTER, "appstream");
-  self->current_app = NULL;
   self->proxy = NULL;
 }
 
@@ -239,7 +181,6 @@ gs_plugin_apk_dispose (GObject *object)
 {
   GsPluginApk *self = GS_PLUGIN_APK (object);
 
-  g_clear_object (&self->current_app);
   g_clear_object (&self->proxy);
 
   G_OBJECT_CLASS (gs_plugin_apk_parent_class)->dispose (object);
@@ -285,8 +226,6 @@ gs_plugin_apk_setup_async (GsPlugin *plugin,
   // FIXME: Instead of disabling the timeout here, apkd should have an async API.
   g_dbus_proxy_set_default_timeout (G_DBUS_PROXY (self->proxy), G_MAXINT);
 
-  g_signal_connect (self->proxy, "g-signal", G_CALLBACK (apk_progress_signal_connect_callback), plugin);
-
   g_task_return_boolean (task, TRUE);
 }
 
@@ -310,7 +249,6 @@ gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
   g_autoptr (GTask) task = NULL;
   g_autoptr (GError) local_error = NULL;
   g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
-  self->current_app = app_dl;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_refresh_metadata_async);
@@ -322,14 +260,12 @@ gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
   if (apk_polkit1_call_update_repositories_sync (self->proxy, cancellable, &local_error))
     {
       gs_app_set_progress (app_dl, 100);
-      self->current_app = NULL;
       gs_plugin_updates_changed (plugin);
       g_task_return_boolean (task, TRUE);
       return;
     }
   else
     {
-      self->current_app = NULL;
       g_task_return_error (task, g_steal_pointer (&local_error));
       return;
     }
@@ -400,19 +336,15 @@ gs_plugin_app_install (GsPlugin *plugin,
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_INSTALLING);
 
-  self->current_app = app;
-
   if (!apk_polkit1_call_add_package_sync (self->proxy, source, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
       gs_app_set_state_recover (app);
-      self->current_app = NULL;
       return FALSE;
     }
 
   gs_app_set_state (app, GS_APP_STATE_INSTALLED);
-  self->current_app = NULL;
   return TRUE;
 }
 
@@ -440,19 +372,16 @@ gs_plugin_app_remove (GsPlugin *plugin,
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_REMOVING);
 
-  self->current_app = app;
 
   if (!apk_polkit1_call_delete_package_sync (self->proxy, source, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
       gs_app_set_state_recover (app);
-      self->current_app = NULL;
       return FALSE;
     }
 
   gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
-  self->current_app = NULL;
   return TRUE;
 }
 
@@ -480,7 +409,6 @@ gs_plugin_update (GsPlugin *plugin,
       if (!is_proxy && !gs_app_has_management_plugin (app, plugin))
         continue;
 
-      self->current_app = app;
       g_debug ("Updating app %s", gs_app_get_unique_id (app));
 
       gs_app_set_state (app, GS_APP_STATE_INSTALLING);
@@ -504,7 +432,6 @@ gs_plugin_update (GsPlugin *plugin,
         }
 
       gs_app_set_state (app, GS_APP_STATE_INSTALLED);
-      self->current_app = NULL;
     }
 
   gs_plugin_updates_changed (plugin);
@@ -513,7 +440,6 @@ gs_plugin_update (GsPlugin *plugin,
 error:
   g_propagate_error (error, g_steal_pointer (&local_error));
   gs_app_set_state_recover (app);
-  self->current_app = NULL;
   return FALSE;
 }
 
