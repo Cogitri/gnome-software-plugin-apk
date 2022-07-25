@@ -402,6 +402,50 @@ gs_plugin_app_remove (GsPlugin *plugin,
   return TRUE;
 }
 
+/**
+ * gs_plugin_apk_prepare_update:
+ * @plugin: The apk plugin
+ * @list: List of desired apps to update
+ * @ready: List to store apps once ready to be updated
+ *
+ * Convenience function which takes a list of apps to update and
+ * a list to store apps once they are ready to be updated. It iterate
+ * over the apps from @list, takes care that it is possible to update them,
+ * and when they are ready to be updated, adds them to @ready.
+ *
+ **/
+static void
+gs_plugin_apk_prepare_update (GsPlugin *plugin,
+                              GsAppList *list,
+                              GsAppList *ready)
+{
+  for (guint i = 0; i < gs_app_list_length (list); i++)
+    {
+      GsApp *app;
+      app = gs_app_list_index (list, i);
+
+      /* We shall only touch the apps if they are are owned by us or
+       * a proxy (and thus might contain some apps owned by us) */
+      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY))
+        {
+          gs_plugin_apk_prepare_update (plugin, gs_app_get_related (app), ready);
+          gs_app_set_state (app, GS_APP_STATE_INSTALLING);
+          continue;
+        }
+
+      if (!gs_app_has_management_plugin (app, plugin))
+        {
+          g_debug ("Ignoring update on '%s', not owned by APK",
+                   gs_app_get_unique_id (app));
+          continue;
+        }
+
+      gs_app_set_state (app, GS_APP_STATE_INSTALLING);
+
+      gs_app_list_add (ready, app);
+    }
+}
+
 gboolean
 gs_plugin_update (GsPlugin *plugin,
                   GsAppList *list,
@@ -411,53 +455,61 @@ gs_plugin_update (GsPlugin *plugin,
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GError) local_error = NULL;
   g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
-  GsApp *app;
+  g_autoptr (GsAppList) update_list = gs_app_list_new ();
+  g_autofree const gchar **source_array = NULL;
 
   gs_app_set_progress (app_dl, GS_APP_PROGRESS_UNKNOWN);
-  for (guint i = 0; i < gs_app_list_length (list); i++)
+
+  gs_plugin_apk_prepare_update (plugin, list, update_list);
+
+  source_array = g_new0 (const gchar *, gs_app_list_length (update_list) + 1);
+  for (int i = 0; i < gs_app_list_length (update_list); i++)
     {
-      gboolean is_proxy;
-      app = gs_app_list_index (list, i);
+      GsApp *app = gs_app_list_index (update_list, i);
+      source_array[i] = gs_app_get_source_default (app);
+    }
+  source_array[gs_app_list_length (update_list)] = NULL;
 
-      is_proxy = gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY);
-
-      /* We shall only touch the apps if they are are owned by us or
-       * a proxy (and thus might contain some apps owned by us) */
-      if (!is_proxy && !gs_app_has_management_plugin (app, plugin))
-        continue;
-
-      g_debug ("Updating app %s", gs_app_get_unique_id (app));
-
-      gs_app_set_state (app, GS_APP_STATE_INSTALLING);
-
-      if (is_proxy)
+  if (!apk_polkit2_call_upgrade_packages_sync (self->proxy, source_array,
+                                               cancellable, &local_error))
+    {
+      /* When and upgrade transaction failed, it could be out of two reasons:
+       * - The world constraints couldn't match. In that case, nothing was
+       * updated and we are safe to set all the apps to the recover state.
+       * - Actual errors happened! Could be a variety of things, including
+       * network timeouts, errors in packages' ownership and what not. This
+       * is dangerous, since the transaction was run half-way. Show an error
+       * that the user should run `apk fix` and that the system might be in
+       * an inconsistent state. We also have no idea of which apps succeded
+       * and which didn't, so also recover everything and hope the refine
+       * takes care of fixing things in the aftermath. */
+      g_dbus_error_strip_remote_error (local_error);
+      g_propagate_error (error, g_steal_pointer (&local_error));
+      for (int i = 0; i < gs_app_list_length (update_list); i++)
         {
-          if (!gs_plugin_update (plugin, gs_app_get_related (app), cancellable, &local_error))
-            goto error;
+          GsApp *app = gs_app_list_index (update_list, i);
+          gs_app_set_state_recover (app);
         }
-      else
-        {
-          g_autofree gchar *source = gs_plugin_apk_get_source (app, &local_error);
-          if (source == NULL)
-            goto error;
+      /*gs_app_set_state_recover (app); TODO: Fix this! */
+      return FALSE;
+    }
 
-          if (!apk_polkit1_call_upgrade_package_sync (self->proxy, source, cancellable, &local_error))
-            {
-              g_dbus_error_strip_remote_error (local_error);
-              goto error;
-            }
-        }
-
+  for (int i = 0; i < gs_app_list_length (update_list); i++)
+    {
+      GsApp *app = gs_app_list_index (update_list, i);
       gs_app_set_state (app, GS_APP_STATE_INSTALLED);
+    }
+
+  /* Roll-back apps from the original list with a quirk */
+  for (int i = 0; i < gs_app_list_length (list); i++)
+    {
+      GsApp *app = gs_app_list_index (list, i);
+      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY))
+        gs_app_set_state (app, GS_APP_STATE_INSTALLED);
     }
 
   gs_plugin_updates_changed (plugin);
   return TRUE;
-
-error:
-  g_propagate_error (error, g_steal_pointer (&local_error));
-  gs_app_set_state_recover (app);
-  return FALSE;
 }
 
 void
