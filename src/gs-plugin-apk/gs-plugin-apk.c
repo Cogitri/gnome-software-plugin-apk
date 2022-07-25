@@ -42,7 +42,7 @@ typedef struct
   const gchar *version;
   const gchar *description;
   const gchar *license;
-  const gchar *oldVersion;
+  const gchar *stagingVersion;
   const gchar *url;
   gulong installedSize;
   gulong size;
@@ -50,23 +50,37 @@ typedef struct
 } ApkdPackage;
 
 /**
- * g_variant_to_apkd_package:
- * @value_tuple: a GVariant, as received from apk_polkit1_call*
+ * gs_plugin_apk_variant_to_apkd:
+ * @dict: a `a{sv}` GVariant representing a package
+ * @pkg: an ApkdPackage pointer where to place the data
  *
- * Convenience function which converts a GVariant pack we get from our DBus
- * proxy to a ApkdPackage. The returned value is just a temporary container
- * referencing data in the input @value_tuple. The returned fields shall not
- * be freed and can become invalid after @value_tuple is freed.
+ * Receives a GVariant dictionary representing a package and fills an
+ * ApkdPackage with the fields available in the dictionary. Returns
+ * a boolean depending on whether the dictionary contains or not an error
+ * field.
  **/
-static ApkdPackage
-g_variant_to_apkd_package (GVariant *value_tuple)
+static inline gboolean
+gs_plugin_apk_variant_to_apkd (GVariant *dict, ApkdPackage *pkg)
 {
-  ApkdPackage pkg;
-  g_variant_get (value_tuple, "(&s&s&s&s&s&sttu)",
-                 &pkg.name, &pkg.version, &pkg.description,
-                 &pkg.license, &pkg.oldVersion, &pkg.url,
-                 &pkg.installedSize, &pkg.size, &pkg.packageState);
-  return pkg;
+  gboolean ret;
+  const gchar *error_str;
+  ret = g_variant_lookup (dict, "name", "&s", &pkg->name);
+  g_assert (ret);
+  if (g_variant_lookup (dict, "error", "&s", &error_str))
+    {
+      g_warning ("Package %s could not be unpacked: %s", pkg->name, error_str);
+      return FALSE;
+    }
+  g_variant_lookup (dict, "version", "&s", &pkg->version);
+  g_variant_lookup (dict, "description", "&s", &pkg->description);
+  g_variant_lookup (dict, "license", "&s", &pkg->license);
+  g_variant_lookup (dict, "url", "&s", &pkg->url);
+  g_variant_lookup (dict, "staging_version", "&s", &pkg->stagingVersion);
+  g_variant_lookup (dict, "installed_size", "t", &pkg->installedSize);
+  g_variant_lookup (dict, "size", "t", &pkg->size);
+  g_variant_lookup (dict, "package_state", "u", &pkg->packageState);
+
+  return TRUE;
 }
 
 /**
@@ -130,15 +144,9 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
   gs_app_set_metadata (app, "GnomeSoftware::PackagingFormat", "apk");
   gs_app_set_state (app, apk_to_app_state (pkg->packageState));
+  gs_app_set_version (app, pkg->version);
   if (gs_app_get_state (app) == GS_APP_STATE_UPDATABLE_LIVE)
-    {
-      gs_app_set_version (app, pkg->oldVersion);
-      gs_app_set_update_version (app, pkg->version);
-    }
-  else
-    {
-      gs_app_set_version (app, pkg->version);
-    }
+    gs_app_set_update_version (app, pkg->stagingVersion);
   gs_plugin_cache_add (plugin, cache_name, app);
 
   return app;
@@ -284,29 +292,38 @@ gs_plugin_add_updates (GsPlugin *plugin,
   g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
 
   g_debug ("Adding updates");
-
+  /* I believe we have to invalidate the cache here! */
   gs_app_set_progress (app_dl, GS_APP_PROGRESS_UNKNOWN);
-  if (!apk_polkit1_call_list_upgradable_packages_sync (self->proxy, &upgradable_packages, cancellable, &local_error))
+
+  if (!apk_polkit2_call_list_upgradable_packages_sync (self->proxy,
+                                                       APK_POLKIT_CLIENT_DETAILS_FLAGS_ALL,
+                                                       &upgradable_packages,
+                                                       cancellable,
+                                                       &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
       return FALSE;
     }
 
-  g_debug ("Found %" G_GSIZE_FORMAT " upgradable packages", g_variant_n_children (upgradable_packages));
+  g_debug ("Found %" G_GSIZE_FORMAT " upgradable packages",
+           g_variant_n_children (upgradable_packages));
 
   for (gsize i = 0; i < g_variant_n_children (upgradable_packages); i++)
     {
-      g_autoptr (GsApp) app = NULL;
-      g_autoptr (GVariant) value_tuple = NULL;
-      ApkdPackage pkg;
+      g_autoptr (GVariant) dict = NULL;
+      GsApp *app;
+      ApkdPackage pkg = { NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, Available };
+      gboolean ret;
 
-      value_tuple = g_variant_get_child_value (upgradable_packages, i);
-      pkg = g_variant_to_apkd_package (value_tuple);
+      dict = g_variant_get_child_value (upgradable_packages, i);
+      ret = gs_plugin_apk_variant_to_apkd (dict, &pkg);
+      /* list_upgradable_packages doesn't have array input, thus no error output */
+      g_assert (ret);
       if (pkg.packageState == Upgradable || pkg.packageState == Downgradable)
         {
           app = apk_package_to_app (plugin, &pkg);
-          gs_app_list_add (list, g_steal_pointer (&app));
+          gs_app_list_add (list, app);
         }
     }
 
