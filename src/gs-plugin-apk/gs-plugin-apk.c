@@ -610,36 +610,44 @@ fix_app_missing_appstream (GsPlugin *plugin,
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GError) local_error = NULL;
   g_autoptr (GVariant) search_result = NULL;
-  const gchar *fn;
-  ApkdPackage package;
+  g_autoptr (GVariant) pkg = NULL;
+  const gchar *fn[2] = { NULL, NULL }, *pkg_name;
+  gboolean ret;
 
   /* The appstream plugin sets some metadata on apps that come from desktop
    * and metainfo files. If metadata is missing, just give-up */
-  fn = gs_app_get_metadata_item (app, "appstream::source-file");
-  if (fn == NULL)
+  fn[0] = gs_app_get_metadata_item (app, "appstream::source-file");
+  if (fn[0] == NULL)
     {
       g_warning ("Couldn't find 'appstream::source-file' metadata for %s",
                  gs_app_get_unique_id (app));
       return FALSE;
     }
 
-  g_debug ("Found desktop/appstream file %s for app %s", fn, gs_app_get_unique_id (app));
+  g_debug ("Found desktop/appstream file %s for app %s", fn[0],
+           gs_app_get_unique_id (app));
 
-  if (!apk_polkit1_call_search_file_owner_sync (self->proxy, fn, &search_result, cancellable, &local_error))
+  if (!apk_polkit2_call_search_files_owners_sync (self->proxy, fn,
+                                                  APK_POLKIT_CLIENT_DETAILS_FLAGS_NONE,
+                                                  &search_result, cancellable,
+                                                  &local_error))
     {
       if (!g_error_matches (local_error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
         {
           g_dbus_error_strip_remote_error (local_error);
           g_warning ("Couldn't find any package owning file '%s': %s",
-                     fn, local_error->message);
+                     fn[0], local_error->message);
         }
       return FALSE;
     }
 
-  package = g_variant_to_apkd_package (search_result);
-  g_debug ("Found pkgname '%s' for app %s", package.name,
+  g_assert (g_variant_n_children (search_result) == 1);
+  pkg = g_variant_get_child_value (search_result, 0);
+  ret = g_variant_lookup (pkg, "name", "&s", &pkg_name);
+  g_assert (ret);
+  g_debug ("Found pkgname '%s' for app %s", pkg_name,
            gs_app_get_unique_id (app));
-  gs_app_add_source (app, package.name);
+  gs_app_add_source (app, pkg_name);
 
   return TRUE;
 }
