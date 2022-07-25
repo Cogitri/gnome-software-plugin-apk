@@ -6,18 +6,21 @@
  */
 
 #include "gs-plugin-apk.h"
-#include <apk-polkit-1/apk-polkit-client.h>
+#include <apk-polkit-2/apk-polkit-client-bitflags.h>
+#include <apk-polkit-2/apk-polkit-client.h>
 #include <appstream.h>
 #include <gnome-software.h>
 #include <libintl.h>
 #include <locale.h>
 #define _(string) gettext (string)
 
+#define APK_POLKIT_CLIENT_DETAILS_FLAGS_ALL 0xFF
+
 struct _GsPluginApk
 {
   GsPlugin parent;
 
-  ApkPolkit1 *proxy;
+  ApkPolkit2 *proxy;
 };
 
 G_DEFINE_TYPE (GsPluginApk, gs_plugin_apk, GS_TYPE_PLUGIN);
@@ -207,10 +210,10 @@ gs_plugin_apk_setup_async (GsPlugin *plugin,
 
   g_debug ("Initializing plugin");
 
-  self->proxy = apk_polkit1_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+  self->proxy = apk_polkit2_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
                                                     G_DBUS_PROXY_FLAGS_NONE,
-                                                    "dev.Cogitri.apkPolkit1",
-                                                    "/dev/Cogitri/apkPolkit1",
+                                                    "dev.Cogitri.apkPolkit2",
+                                                    "/dev/Cogitri/apkPolkit2",
                                                     cancellable,
                                                     &local_error);
 
@@ -255,7 +258,7 @@ gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
 
   gs_app_set_summary_missing (app_dl, _ ("Getting apk repository indexes…"));
   gs_plugin_status_update (plugin, app_dl, GS_PLUGIN_STATUS_DOWNLOADING);
-  if (apk_polkit1_call_update_repositories_sync (self->proxy, cancellable, &local_error))
+  if (apk_polkit2_call_update_repositories_sync (self->proxy, cancellable, &local_error))
     {
       gs_app_set_progress (app_dl, 100);
       gs_plugin_updates_changed (plugin);
@@ -334,7 +337,7 @@ gs_plugin_app_install (GsPlugin *plugin,
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_INSTALLING);
 
-  if (!apk_polkit1_call_add_package_sync (self->proxy, source, cancellable, &local_error))
+  if (!apk_polkit2_call_add_package_sync (self->proxy, source, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -370,7 +373,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_REMOVING);
 
-  if (!apk_polkit1_call_delete_package_sync (self->proxy, source, cancellable, &local_error))
+  if (!apk_polkit2_call_delete_package_sync (self->proxy, source, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -750,7 +753,7 @@ gs_plugin_add_sources (GsPlugin *plugin,
 
   g_debug ("Adding repositories");
 
-  if (!apk_polkit1_call_list_repositories_sync (self->proxy, &repositories, cancellable, &local_error))
+  if (!apk_polkit2_call_list_repositories_sync (self->proxy, &repositories, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -857,14 +860,14 @@ gs_plugin_repo_update (GsPlugin *plugin,
   g_debug ("%sing repository %s", action, url);
   if (is_install)
     {
-      rc = apk_polkit1_call_add_repository_sync (self->proxy,
+      rc = apk_polkit2_call_add_repository_sync (self->proxy,
                                                  url,
                                                  cancellable,
                                                  &local_error);
     }
   else
     {
-      rc = apk_polkit1_call_remove_repository_sync (self->proxy,
+      rc = apk_polkit2_call_remove_repository_sync (self->proxy,
                                                     url,
                                                     cancellable,
                                                     &local_error);
