@@ -624,9 +624,6 @@ fix_app_missing_appstream (GsPlugin *plugin,
       return FALSE;
     }
 
-  g_debug ("Found desktop/appstream file %s for app %s", fn[0],
-           gs_app_get_unique_id (app));
-
   if (!apk_polkit2_call_search_files_owners_sync (self->proxy, fn,
                                                   APK_POLKIT_CLIENT_DETAILS_FLAGS_NONE,
                                                   &search_result, cancellable,
