@@ -104,8 +104,9 @@ gs_plugins_apk_updates (GsPluginLoader *plugin_loader)
   //   packages. This could be extended in the future.
   // * We should enable generic updates plugin and verify that
   //   the proxy app is created.
-  // * We would like that also some DESKTOP app is created. Either
-  //   we hack something or enable the appstream plugin.
+  // * We would like that also some DESKTOP app is created. Do so
+  //   by returning the package from the hard-coded desktop app in the
+  //   updates.
   // * Execute update: Verify packages are updated? Needs Mock improvements!
   g_autoptr (GError) error = NULL;
   g_autoptr (GsPluginJob) plugin_job = NULL;
@@ -286,12 +287,12 @@ main (int argc, char **argv)
   g_test_add_data_func ("/gnome-software/plugins/apk/repo-actions",
                         plugin_loader,
                         (GTestDataFunc) gs_plugins_apk_repo_actions);
-  g_test_add_data_func ("/gnome-software/plugins/apk/updates",
-                        plugin_loader,
-                        (GTestDataFunc) gs_plugins_apk_updates);
   g_test_add_data_func ("/gnome-software/plugins/apk/app-install-remove",
                         plugin_loader,
                         (GTestDataFunc) gs_plugins_apk_app_install_remove);
+  g_test_add_data_func ("/gnome-software/plugins/apk/updates",
+                        plugin_loader,
+                        (GTestDataFunc) gs_plugins_apk_updates);
   retval = g_test_run ();
 
   /* Clean up. */
