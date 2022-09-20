@@ -62,10 +62,9 @@ typedef struct
 static inline gboolean
 gs_plugin_apk_variant_to_apkd (GVariant *dict, ApkdPackage *pkg)
 {
-  gboolean ret;
   const gchar *error_str;
-  ret = g_variant_lookup (dict, "name", "&s", &pkg->name);
-  g_assert (ret);
+  if (!g_variant_lookup (dict, "name", "&s", &pkg->name))
+    return FALSE;
   if (g_variant_lookup (dict, "error", "&s", &error_str))
     {
       g_warning ("Package %s could not be unpacked: %s", pkg->name, error_str);
@@ -314,12 +313,11 @@ gs_plugin_add_updates (GsPlugin *plugin,
       g_autoptr (GVariant) dict = NULL;
       GsApp *app;
       ApkdPackage pkg = { NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, Available };
-      gboolean ret;
 
       dict = g_variant_get_child_value (upgradable_packages, i);
-      ret = gs_plugin_apk_variant_to_apkd (dict, &pkg);
       /* list_upgradable_packages doesn't have array input, thus no error output */
-      g_assert (ret);
+      if (!gs_plugin_apk_variant_to_apkd (dict, &pkg))
+        g_assert_not_reached ();
       if (pkg.packageState == Upgradable || pkg.packageState == Downgradable)
         {
           app = apk_package_to_app (plugin, &pkg);
@@ -712,7 +710,12 @@ refine_apk_packages (GsPlugin *plugin,
       g_debug ("Refining %s", gs_app_get_unique_id (app));
       apk_pkg_variant = g_variant_get_child_value (apk_pkgs, i);
       if (!gs_plugin_apk_variant_to_apkd (apk_pkg_variant, &apk_pkg))
-        continue;
+        {
+          /* Even if there is an error, the pkg name should be available.
+           * Otherwise, this is critical, bail-out! */
+          g_assert (g_strcmp0 (source, apk_pkg.name) == 0);
+          continue;
+        }
 
       g_assert (g_strcmp0 (source, apk_pkg.name) == 0);
       set_app_metadata (plugin, app, &apk_pkg);
