@@ -466,7 +466,6 @@ gs_plugin_update (GsPlugin *plugin,
       GsApp *app = gs_app_list_index (update_list, i);
       source_array[i] = gs_app_get_source_default (app);
     }
-  source_array[gs_app_list_length (update_list)] = NULL;
 
   if (!apk_polkit2_call_upgrade_packages_sync (self->proxy, source_array,
                                                cancellable, &local_error))
