@@ -102,6 +102,12 @@ def UpgradePackages(self, packages):
                 p["version"] = p["staging_version"]
                 p["package_state"] = dbus.UInt32(APK_POLKIT_STATE_INSTALLED)
 
-# @dbus.service.method(MAIN_IFACE, in_signature='asu', out_signature='aa{sv}')
-# def SearchFilesOwners(self, paths, requestedProperties):
-#     return
+@dbus.service.method(MAIN_IFACE, in_signature='asu', out_signature='aa{sv}')
+def SearchFilesOwners(self, paths, requestedProperties):
+    pkgs = []
+    for path in paths:
+        if path == "/usr/share/apps/no-source-app.desktop":
+            pkgs.append({"name": "no-source-pkg"})
+        else:
+            pkgs.append({})
+    return pkgs

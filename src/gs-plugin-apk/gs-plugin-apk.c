@@ -591,58 +591,77 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package)
 /**
  * fix_app_missing_appstream:
  * @plugin: The apk GsPlugin.
- * @app: The GsApp to resolve the metainfo/desktop file for.
+ * @list: The GsAppList to resolve the metainfo/desktop files for.
  * @cancellable: GCancellable to cancel synchronous dbus call.
  *
- * If the appstream plugin could not find the app in the distribution metadata,
+ * If the appstream plugin could not find the apps in the distribution metadata,
  * it might have created the application from the metainfo or desktop files
  * installed. It will contain some basic information, but the apk package to
  * which it belongs (the source) needs to completed by us.
  **/
 static gboolean
 fix_app_missing_appstream (GsPlugin *plugin,
-                           GsApp *app,
-                           GCancellable *cancellable)
+                           GsAppList *list,
+                           GCancellable *cancellable,
+                           GError **error)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GError) local_error = NULL;
-  g_autoptr (GVariant) search_result = NULL;
-  g_autoptr (GVariant) pkg = NULL;
-  const gchar *fn[2] = { NULL, NULL }, *pkg_name;
-  gboolean ret;
+  g_autofree const gchar **fn_array = NULL;
+  g_autoptr (GsAppList) search_list = gs_app_list_new ();
+  g_autoptr (GVariant) search_results = NULL;
 
+  if (gs_app_list_length (list) == 0)
+    return TRUE;
+
+  g_debug ("Trying to find source packages for %d apps", gs_app_list_length (list));
   /* The appstream plugin sets some metadata on apps that come from desktop
    * and metainfo files. If metadata is missing, just give-up */
-  fn[0] = gs_app_get_metadata_item (app, "appstream::source-file");
-  if (fn[0] == NULL)
+  for (int i = 0; i < gs_app_list_length (list); i++)
     {
-      g_warning ("Couldn't find 'appstream::source-file' metadata for %s",
-                 gs_app_get_unique_id (app));
-      return FALSE;
+      GsApp *app = gs_app_list_index (list, i);
+      if (gs_app_get_metadata_item (app, "appstream::source-file"))
+        gs_app_list_add (search_list, app);
+      else
+        g_warning ("Couldn't find 'appstream::source-file' metadata for %s",
+                   gs_app_get_unique_id (app));
     }
 
-  if (!apk_polkit2_call_search_files_owners_sync (self->proxy, fn,
+  fn_array = g_new0 (const gchar *, gs_app_list_length (search_list) + 1);
+  for (int i = 0; i < gs_app_list_length (search_list); i++)
+    {
+      GsApp *app = gs_app_list_index (search_list, i);
+      fn_array[i] = gs_app_get_metadata_item (app, "appstream::source-file");
+      g_assert (fn_array[i]);
+    }
+
+  if (gs_app_list_length (search_list) == 0)
+    return TRUE;
+
+  if (!apk_polkit2_call_search_files_owners_sync (self->proxy, fn_array,
                                                   APK_POLKIT_CLIENT_DETAILS_FLAGS_NONE,
-                                                  &search_result, cancellable,
-                                                  &local_error))
+                                                  &search_results, cancellable,
+                                                  error))
+    return FALSE;
+
+  g_assert (g_variant_n_children (search_results) == gs_app_list_length (search_list));
+  for (int i = 0; i < gs_app_list_length (search_list); i++)
     {
-      if (!g_error_matches (local_error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+      g_autoptr (GVariant) apk_pkg_variant = NULL;
+      GsApp *app = gs_app_list_index (search_list, i);
+      ApkdPackage apk_pkg = { NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, Available };
+
+      apk_pkg_variant = g_variant_get_child_value (search_results, i);
+      if (!gs_plugin_apk_variant_to_apkd (apk_pkg_variant, &apk_pkg))
         {
-          g_dbus_error_strip_remote_error (local_error);
-          g_warning ("Couldn't find any package owning file '%s': %s",
-                     fn[0], local_error->message);
+          g_warning ("Couldn't find any package owning file '%s'",
+                     fn_array[i]);
+          continue;
         }
-      return FALSE;
+      g_debug ("Found pkgname '%s' for app %s: adding source and setting management plugin",
+               apk_pkg.name, gs_app_get_unique_id (app));
+      gs_app_add_source (app, apk_pkg.name);
+      gs_app_set_management_plugin (app, plugin);
     }
-
-  g_assert (g_variant_n_children (search_result) == 1);
-  pkg = g_variant_get_child_value (search_result, 0);
-  ret = g_variant_lookup (pkg, "name", "&s", &pkg_name);
-  g_assert (ret);
-  g_debug ("Found pkgname '%s' for app %s", pkg_name,
-           gs_app_get_unique_id (app));
-  gs_app_add_source (app, pkg_name);
-
   return TRUE;
 }
 
@@ -745,11 +764,13 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
   g_autoptr (GTask) task = NULL;
   g_autoptr (GError) local_error = NULL;
   g_autoptr (GsAppList) refine_apps_list = NULL;
+  g_autoptr (GsAppList) missing_pkgname_list = NULL;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_refine_async);
 
   refine_apps_list = gs_app_list_new ();
+  missing_pkgname_list = gs_app_list_new ();
 
   g_debug ("Starting refinining process");
 
@@ -783,22 +804,14 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
         {
           /* If appstream couldn't assign a source, it means the app does not
            * have an entry in the distribution-generated metadata. That should
-           * be fixed in the app, but we try to workaround it by finding the
+           * be fixed in the app. We try to workaround it by finding the
            * owner of the metainfo or desktop file */
           if (gs_app_get_source_default (app) == NULL)
             {
-              g_warning ("App %s missing pkgname. Trying to resolve via metainfo/desktop file",
-                         gs_app_get_unique_id (app));
-              if (!fix_app_missing_appstream (plugin, app, cancellable))
-                {
-                  if (g_cancellable_is_cancelled (cancellable))
-                    {
-                      g_task_return_boolean (task, TRUE);
-                      return;
-                    }
-                  else
-                    continue;
-                }
+              g_debug ("App %s missing pkgname. Will try to resolve via metainfo/desktop file",
+                       gs_app_get_unique_id (app));
+              gs_app_list_add (missing_pkgname_list, app);
+              continue;
             }
 
           g_debug ("Setting ourselves as management plugin for app %s", gs_app_get_unique_id (app));
@@ -824,6 +837,19 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
         }
 
       gs_app_list_add (refine_apps_list, app);
+    }
+
+  if (!fix_app_missing_appstream (plugin, missing_pkgname_list, cancellable, &local_error))
+    {
+      g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
+    }
+
+  for (int i = 0; i < gs_app_list_length (missing_pkgname_list); i++)
+    {
+      GsApp *app = gs_app_list_index (missing_pkgname_list, i);
+      if (gs_app_get_source_default (app) != NULL)
+        gs_app_list_add (refine_apps_list, app);
     }
 
   if (flags &
