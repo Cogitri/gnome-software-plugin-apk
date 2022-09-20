@@ -194,7 +194,7 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
   g_assert_cmpint (gs_app_get_scope (app), ==, AS_COMPONENT_SCOPE_SYSTEM);
   g_assert_cmpint (gs_app_get_state (app), ==, GS_APP_STATE_AVAILABLE);
 
-  // Execute installation action
+  // execute installation action
   g_object_unref (plugin_job);
   plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_INSTALL,
                                    "app", app,
@@ -219,6 +219,33 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
 
   // Verify app is now removed
   g_assert_cmpint (gs_app_get_state (app), ==, GS_APP_STATE_AVAILABLE);
+}
+
+static void
+gs_plugins_apk_refine_app_missing_source (GsPluginLoader *plugin_loader)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (GsPluginJob) plugin_job = NULL;
+  g_autoptr (GsApp) app = NULL;
+  g_autoptr (GsPlugin) plugin = NULL;
+
+  // Search for a non-installed app. Use a refine flag not being used
+  // to force the run of the refine, but only fix the missing source
+  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_SEARCH,
+                                   "search", "no-source",
+                                   "refine-flags", GS_PLUGIN_REFINE_FLAGS_REQUIRE_KUDOS,
+                                   NULL);
+  app = gs_plugin_loader_job_process_app (plugin_loader, plugin_job, NULL, &error);
+  gs_test_flush_main_context ();
+  g_assert_no_error (error);
+  g_assert (app != NULL);
+  plugin = GS_PLUGIN (gs_app_dup_management_plugin (app));
+  g_assert_nonnull (plugin);
+
+  // make sure we got the correct app, is managed by us and has the source set
+  g_assert_cmpstr (gs_app_get_id (app), ==, "no-source-app.desktop");
+  g_assert_cmpstr (gs_plugin_get_name (plugin), ==, "apk");
+  g_assert_nonnull (gs_app_get_source_default (app));
 }
 
 int
@@ -255,6 +282,14 @@ main (int argc, char **argv)
                   "    <name>apk-test-app</name>\n"
                   "    <summary>Alpine Package Keeper test app</summary>\n"
                   "    <pkgname>apk-test-app</pkgname>\n"
+                  "  </component>\n"
+                  "  <component type=\"desktop\">\n"
+                  "    <id>no-source-app.desktop</id>\n"
+                  "    <name>no-source-app</name>\n"
+                  "    <summary>App with missing source in metadata</summary>\n"
+                  "    <info>\n"
+                  "      <filename>/usr/share/apps/no-source-app.desktop</filename>\n"
+                  "    </info>\n"
                   "  </component>\n"
                   "  <info>\n"
                   "    <scope>system</scope>\n"
@@ -293,6 +328,9 @@ main (int argc, char **argv)
   g_test_add_data_func ("/gnome-software/plugins/apk/updates",
                         plugin_loader,
                         (GTestDataFunc) gs_plugins_apk_updates);
+  g_test_add_data_func ("/gnome-software/plugins/apk/missing-source",
+                        plugin_loader,
+                        (GTestDataFunc) gs_plugins_apk_refine_app_missing_source);
   retval = g_test_run ();
 
   /* Clean up. */
