@@ -729,13 +729,16 @@ refine_apk_packages (GsPlugin *plugin,
       apk_pkg_variant = g_variant_get_child_value (apk_pkgs, i);
       if (!gs_plugin_apk_variant_to_apkd (apk_pkg_variant, &apk_pkg))
         {
-          /* Even if there is an error, the pkg name should be available.
-           * Otherwise, this is critical, bail-out! */
-          g_assert (g_strcmp0 (source, apk_pkg.name) == 0);
+          if (g_strcmp0 (source, apk_pkg.name) != 0)
+            g_warning ("source: '%s' and the pkg name: '%s' differ", source, apk_pkg.name);
           continue;
         }
 
-      g_assert (g_strcmp0 (source, apk_pkg.name) == 0);
+      if (g_strcmp0 (source, apk_pkg.name) != 0)
+        {
+          g_warning ("source: '%s' and the pkg name: '%s' differ", source, apk_pkg.name);
+          continue;
+        }
       set_app_metadata (plugin, app, &apk_pkg);
       /* We should only set generic apps for OS updates */
       if (gs_app_get_kind (app) == AS_COMPONENT_KIND_GENERIC)
