@@ -256,18 +256,15 @@ gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GTask) task = NULL;
   g_autoptr (GError) local_error = NULL;
-  g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_refresh_metadata_async);
 
   g_debug ("Refreshing repositories");
 
-  gs_app_set_summary_missing (app_dl, _ ("Getting apk repository indexes…"));
-  gs_plugin_status_update (plugin, app_dl, GS_PLUGIN_STATUS_DOWNLOADING);
+  gs_plugin_status_update (plugin, NULL, GS_PLUGIN_STATUS_DOWNLOADING);
   if (apk_polkit2_call_update_repositories_sync (self->proxy, cancellable, &local_error))
     {
-      gs_app_set_progress (app_dl, 100);
       gs_plugin_updates_changed (plugin);
       g_task_return_boolean (task, TRUE);
       return;
@@ -288,11 +285,9 @@ gs_plugin_add_updates (GsPlugin *plugin,
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GVariant) upgradable_packages = NULL;
   g_autoptr (GError) local_error = NULL;
-  g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
 
-  g_debug ("Adding updates");
   /* I believe we have to invalidate the cache here! */
-  gs_app_set_progress (app_dl, GS_APP_PROGRESS_UNKNOWN);
+  g_debug ("Adding updates");
 
   if (!apk_polkit2_call_list_upgradable_packages_sync (self->proxy,
                                                        APK_POLKIT_CLIENT_DETAILS_FLAGS_ALL,
@@ -452,11 +447,11 @@ gs_plugin_update (GsPlugin *plugin,
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GError) local_error = NULL;
-  g_autoptr (GsApp) app_dl = gs_app_new (gs_plugin_get_name (plugin));
   g_autoptr (GsAppList) update_list = gs_app_list_new ();
   g_autofree const gchar **source_array = NULL;
 
-  gs_app_set_progress (app_dl, GS_APP_PROGRESS_UNKNOWN);
+  /* update UI as this might take some time */
+  gs_plugin_status_update (plugin, NULL, GS_PLUGIN_STATUS_WAITING);
 
   gs_plugin_apk_prepare_update (plugin, list, update_list);
 
