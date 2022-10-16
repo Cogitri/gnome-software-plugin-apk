@@ -203,13 +203,16 @@ gs_plugin_apk_setup_finish (GsPlugin *plugin,
 }
 
 static void
+apk_polkit_proxy_setup_cb (GObject *source_object,
+                           GAsyncResult *result,
+                           gpointer user_data);
+
+static void
 gs_plugin_apk_setup_async (GsPlugin *plugin,
                            GCancellable *cancellable,
                            GAsyncReadyCallback callback,
                            gpointer user_data)
 {
-  GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GError) local_error = NULL;
   g_autoptr (GTask) task = NULL;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
@@ -217,13 +220,25 @@ gs_plugin_apk_setup_async (GsPlugin *plugin,
 
   g_debug ("Initializing plugin");
 
-  self->proxy = apk_polkit2_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
-                                                    G_DBUS_PROXY_FLAGS_NONE,
-                                                    "dev.Cogitri.apkPolkit2",
-                                                    "/dev/Cogitri/apkPolkit2",
-                                                    cancellable,
-                                                    &local_error);
+  apk_polkit2_proxy_new_for_bus (G_BUS_TYPE_SYSTEM,
+                                 G_DBUS_PROXY_FLAGS_NONE,
+                                 "dev.Cogitri.apkPolkit2",
+                                 "/dev/Cogitri/apkPolkit2",
+                                 cancellable,
+                                 apk_polkit_proxy_setup_cb,
+                                 g_steal_pointer (&task));
+}
 
+static void
+apk_polkit_proxy_setup_cb (GObject *source_object,
+                           GAsyncResult *result,
+                           gpointer user_data)
+{
+  g_autoptr (GTask) task = g_steal_pointer (&user_data);
+  GsPluginApk *self = g_task_get_source_object (task);
+  g_autoptr (GError) local_error = NULL;
+
+  self->proxy = apk_polkit2_proxy_new_for_bus_finish (result, &local_error);
   if (local_error != NULL)
     {
       g_dbus_error_strip_remote_error (local_error);
@@ -231,7 +246,7 @@ gs_plugin_apk_setup_async (GsPlugin *plugin,
       return;
     }
 
-  // FIXME: Instead of disabling the timeout here, apkd should have an async API.
+  /* Live update operations can take very, very long */
   g_dbus_proxy_set_default_timeout (G_DBUS_PROXY (self->proxy), G_MAXINT);
 
   g_task_return_boolean (task, TRUE);
