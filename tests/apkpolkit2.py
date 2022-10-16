@@ -51,7 +51,7 @@ def load(mock, parameters):
     mock.AddMethods(MAIN_IFACE, [
         ('AddRepository', 's', '', ''),
         ('RemoveRepository', 's', '', ''),
-        ('UpdateRepositories', '', '', ''),
+        ('UpdateRepositories', '', '', 'time.sleep(2)'),
     ])
 
 

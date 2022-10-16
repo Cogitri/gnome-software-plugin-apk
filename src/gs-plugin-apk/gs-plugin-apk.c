@@ -260,6 +260,10 @@ gs_plugin_apk_refresh_metadata_finish (GsPlugin *plugin,
   return g_task_propagate_boolean (G_TASK (result), error);
 }
 
+static void apk_polkit_update_repositories_cb (GObject *source_object,
+                                               GAsyncResult *res,
+                                               gpointer user_data);
+
 static void
 gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
                                       guint64 cache_age_secs,
@@ -278,17 +282,28 @@ gs_plugin_apk_refresh_metadata_async (GsPlugin *plugin,
   g_debug ("Refreshing repositories");
 
   gs_plugin_status_update (plugin, NULL, GS_PLUGIN_STATUS_DOWNLOADING);
-  if (apk_polkit2_call_update_repositories_sync (self->proxy, cancellable, &local_error))
-    {
-      gs_plugin_updates_changed (plugin);
-      g_task_return_boolean (task, TRUE);
-      return;
-    }
-  else
+  apk_polkit2_call_update_repositories (self->proxy, cancellable,
+                                        apk_polkit_update_repositories_cb,
+                                        g_steal_pointer (&task));
+}
+
+static void
+apk_polkit_update_repositories_cb (GObject *source_object,
+                                   GAsyncResult *res,
+                                   gpointer user_data)
+{
+  g_autoptr (GTask) task = g_steal_pointer (&user_data);
+  GsPluginApk *self = g_task_get_source_object (task);
+  g_autoptr (GError) local_error = NULL;
+
+  if (!apk_polkit2_call_update_repositories_finish (self->proxy, res, &local_error))
     {
       g_task_return_error (task, g_steal_pointer (&local_error));
       return;
     }
+
+  gs_plugin_updates_changed (GS_PLUGIN (self));
+  g_task_return_boolean (task, TRUE);
 }
 
 gboolean
