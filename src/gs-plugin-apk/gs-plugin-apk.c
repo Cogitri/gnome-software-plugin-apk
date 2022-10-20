@@ -613,165 +613,35 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package)
   gs_app_set_bundle_kind (app, AS_BUNDLE_KIND_PACKAGE);
 }
 
-/**
- * fix_app_missing_appstream:
- * @plugin: The apk GsPlugin.
- * @list: The GsAppList to resolve the metainfo/desktop files for.
- * @cancellable: GCancellable to cancel synchronous dbus call.
- *
- * If the appstream plugin could not find the apps in the distribution metadata,
- * it might have created the application from the metainfo or desktop files
- * installed. It will contain some basic information, but the apk package to
- * which it belongs (the source) needs to completed by us.
- **/
-static gboolean
-fix_app_missing_appstream (GsPlugin *plugin,
-                           GsAppList *list,
-                           GCancellable *cancellable,
-                           GError **error)
+typedef struct
 {
-  GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autofree const gchar **fn_array = NULL;
-  g_autoptr (GsAppList) search_list = gs_app_list_new ();
-  g_autoptr (GVariant) search_results = NULL;
+  GsAppList *missing_pkgname_list; /* (owned) (nullable) */
+  GsAppList *refine_apps_list;     /* (owned) (not nullable) */
+  GsPluginRefineFlags flags;
+} RefineData;
 
-  if (gs_app_list_length (list) == 0)
-    return TRUE;
+static void
+refine_data_free (RefineData *data)
+{
+  g_clear_object (&data->missing_pkgname_list);
+  g_clear_object (&data->refine_apps_list);
 
-  g_debug ("Trying to find source packages for %d apps", gs_app_list_length (list));
-  /* The appstream plugin sets some metadata on apps that come from desktop
-   * and metainfo files. If metadata is missing, just give-up */
-  for (int i = 0; i < gs_app_list_length (list); i++)
-    {
-      GsApp *app = gs_app_list_index (list, i);
-      if (gs_app_get_metadata_item (app, "appstream::source-file"))
-        gs_app_list_add (search_list, app);
-      else
-        g_warning ("Couldn't find 'appstream::source-file' metadata for %s",
-                   gs_app_get_unique_id (app));
-    }
-
-  fn_array = g_new0 (const gchar *, gs_app_list_length (search_list) + 1);
-  for (int i = 0; i < gs_app_list_length (search_list); i++)
-    {
-      GsApp *app = gs_app_list_index (search_list, i);
-      fn_array[i] = gs_app_get_metadata_item (app, "appstream::source-file");
-      g_assert (fn_array[i]);
-    }
-
-  if (gs_app_list_length (search_list) == 0)
-    return TRUE;
-
-  if (!apk_polkit2_call_search_files_owners_sync (self->proxy, fn_array,
-                                                  APK_POLKIT_CLIENT_DETAILS_FLAGS_NONE,
-                                                  &search_results, cancellable,
-                                                  error))
-    return FALSE;
-
-  g_assert (g_variant_n_children (search_results) == gs_app_list_length (search_list));
-  for (int i = 0; i < gs_app_list_length (search_list); i++)
-    {
-      g_autoptr (GVariant) apk_pkg_variant = NULL;
-      GsApp *app = gs_app_list_index (search_list, i);
-      ApkdPackage apk_pkg = { NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, Available };
-
-      apk_pkg_variant = g_variant_get_child_value (search_results, i);
-      if (!gs_plugin_apk_variant_to_apkd (apk_pkg_variant, &apk_pkg))
-        {
-          g_warning ("Couldn't find any package owning file '%s'",
-                     fn_array[i]);
-          continue;
-        }
-      g_debug ("Found pkgname '%s' for app %s: adding source and setting management plugin",
-               apk_pkg.name, gs_app_get_unique_id (app));
-      gs_app_add_source (app, apk_pkg.name);
-      gs_app_set_management_plugin (app, plugin);
-    }
-  return TRUE;
+  g_free (data);
 }
 
-/**
- * refine_apk_packages:
- * @plugin: The apk GsPlugin.
- * @list: The list of apps to refine.
- * @flags: TheGsPluginRefineFlags which determine what data we add.
- * @cancellable: GCancellable to cancel resolving what app owns the appstream/desktop file.
- * @error: GError which is set if something goes wrong.
- *
- * Get details from apk package for a specific app and fill-in requested refine data.
- **/
-static gboolean
-refine_apk_packages (GsPlugin *plugin,
-                     GsAppList *list,
-                     GsPluginRefineFlags flags,
-                     GCancellable *cancellable,
-                     GError **error)
-{
-  GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autofree const gchar **source_array = NULL;
-  guint details_flags = APK_POLKIT_CLIENT_DETAILS_FLAGS_PACKAGE_STATE;
-  g_autoptr (GVariant) apk_pkgs = NULL;
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (RefineData, refine_data_free);
 
-  if (gs_app_list_length (list) == 0)
-    return TRUE;
+static void
+refine_apk_packages_cb (GObject *object_source,
+                        GAsyncResult *res,
+                        gpointer user_data);
 
-  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION)
-    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_ALL;
-  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION)
-    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_VERSION;
-  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION)
-    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_DESCRIPTION;
-  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE)
-    details_flags |= (APK_POLKIT_CLIENT_DETAILS_FLAGS_SIZE |
-                      APK_POLKIT_CLIENT_DETAILS_FLAGS_INSTALLED_SIZE);
-  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL)
-    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_URL;
-  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE)
-    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_LICENSE;
-
-  source_array = g_new0 (const gchar *, gs_app_list_length (list) + 1);
-  for (int i = 0; i < gs_app_list_length (list); i++)
-    {
-      GsApp *app = gs_app_list_index (list, i);
-      source_array[i] = gs_app_get_source_default (app);
-    }
-  source_array[gs_app_list_length (list)] = NULL;
-
-  if (!apk_polkit2_call_get_packages_details_sync (self->proxy, source_array,
-                                                   details_flags, &apk_pkgs,
-                                                   cancellable, error))
-    return FALSE;
-
-  g_assert (gs_app_list_length (list) == g_variant_n_children (apk_pkgs));
-  for (int i = 0; i < gs_app_list_length (list); i++)
-    {
-      g_autoptr (GVariant) apk_pkg_variant = NULL;
-      GsApp *app = gs_app_list_index (list, i);
-      const gchar *source = gs_app_get_source_default (app);
-      ApkdPackage apk_pkg = { NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, Available };
-
-      g_debug ("Refining %s", gs_app_get_unique_id (app));
-      apk_pkg_variant = g_variant_get_child_value (apk_pkgs, i);
-      if (!gs_plugin_apk_variant_to_apkd (apk_pkg_variant, &apk_pkg))
-        {
-          if (g_strcmp0 (source, apk_pkg.name) != 0)
-            g_warning ("source: '%s' and the pkg name: '%s' differ", source, apk_pkg.name);
-          continue;
-        }
-
-      if (g_strcmp0 (source, apk_pkg.name) != 0)
-        {
-          g_warning ("source: '%s' and the pkg name: '%s' differ", source, apk_pkg.name);
-          continue;
-        }
-      set_app_metadata (plugin, app, &apk_pkg);
-      /* We should only set generic apps for OS updates */
-      if (gs_app_get_kind (app) == AS_COMPONENT_KIND_GENERIC)
-        gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
-    }
-
-  return TRUE;
-}
+static void
+fix_app_missing_appstream_async (GsPlugin *plugin,
+                                 GsAppList *list,
+                                 GCancellable *cancellable,
+                                 GAsyncReadyCallback callback,
+                                 gpointer user_data);
 
 static gboolean
 gs_plugin_apk_refine_finish (GsPlugin *plugin,
@@ -791,14 +661,17 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
 {
   g_autoptr (GTask) task = NULL;
   g_autoptr (GError) local_error = NULL;
-  g_autoptr (GsAppList) refine_apps_list = NULL;
-  g_autoptr (GsAppList) missing_pkgname_list = NULL;
+  g_autoptr (GsAppList) missing_pkgname_list = gs_app_list_new ();
+  g_autoptr (GsAppList) refine_apps_list = gs_app_list_new ();
+  RefineData *data = g_new0 (RefineData, 1);
+
+  data->missing_pkgname_list = g_object_ref (missing_pkgname_list);
+  data->refine_apps_list = g_object_ref (refine_apps_list);
+  data->flags = flags;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_refine_async);
-
-  refine_apps_list = gs_app_list_new ();
-  missing_pkgname_list = gs_app_list_new ();
+  g_task_set_task_data (task, data, (GDestroyNotify) refine_data_free);
 
   g_debug ("Starting refinining process");
 
@@ -867,9 +740,181 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
       gs_app_list_add (refine_apps_list, app);
     }
 
-  if (!fix_app_missing_appstream (plugin, missing_pkgname_list, cancellable, &local_error))
+  fix_app_missing_appstream_async (plugin, missing_pkgname_list,
+                                   cancellable, refine_apk_packages_cb,
+                                   g_steal_pointer (&task));
+}
+
+static void
+apk_polkit_search_files_owners_cb (GObject *object_source,
+                                   GAsyncResult *res,
+                                   gpointer user_data);
+
+/**
+ * fix_app_missing_appstream:
+ * @plugin: The apk GsPlugin.
+ * @list: The GsAppList to resolve the metainfo/desktop files for.
+ * @cancellable: GCancellable to cancel synchronous dbus call.
+ * @task: FIXME!
+ *
+ * If the appstream plugin could not find the apps in the distribution metadata,
+ * it might have created the application from the metainfo or desktop files
+ * installed. It will contain some basic information, but the apk package to
+ * which it belongs (the source) needs to completed by us.
+ **/
+static void
+fix_app_missing_appstream_async (GsPlugin *plugin,
+                                 GsAppList *list,
+                                 GCancellable *cancellable,
+                                 GAsyncReadyCallback callback,
+                                 gpointer user_data)
+{
+  GsPluginApk *self = GS_PLUGIN_APK (plugin);
+  g_autofree const gchar **fn_array = NULL;
+  g_autoptr (GsAppList) search_list = gs_app_list_new ();
+  g_autoptr (GTask) task = NULL;
+
+  task = g_task_new (plugin, cancellable, callback, user_data);
+  g_task_set_source_tag (task, gs_plugin_apk_refine_async);
+  g_task_set_task_data (task, g_object_ref (list), g_object_unref);
+
+  if (gs_app_list_length (list) == 0)
+    {
+      g_task_return_boolean (task, TRUE);
+      return;
+    }
+
+  g_debug ("Trying to find source packages for %d apps", gs_app_list_length (list));
+  /* The appstream plugin sets some metadata on apps that come from desktop
+   * and metainfo files. If metadata is missing, just give-up */
+  for (int i = 0; i < gs_app_list_length (list); i++)
+    {
+      GsApp *app = gs_app_list_index (list, i);
+      if (gs_app_get_metadata_item (app, "appstream::source-file"))
+        gs_app_list_add (search_list, app);
+      else
+        g_warning ("Couldn't find 'appstream::source-file' metadata for %s",
+                   gs_app_get_unique_id (app));
+    }
+
+  fn_array = g_new0 (const gchar *, gs_app_list_length (search_list) + 1);
+  for (int i = 0; i < gs_app_list_length (search_list); i++)
+    {
+      GsApp *app = gs_app_list_index (search_list, i);
+      fn_array[i] = gs_app_get_metadata_item (app, "appstream::source-file");
+      g_assert (fn_array[i]);
+    }
+
+  if (gs_app_list_length (search_list) == 0)
+    {
+      g_task_return_boolean (task, TRUE);
+      return;
+    }
+
+  apk_polkit2_call_search_files_owners (self->proxy, fn_array,
+                                        APK_POLKIT_CLIENT_DETAILS_FLAGS_NONE,
+                                        cancellable, apk_polkit_search_files_owners_cb,
+                                        g_steal_pointer (&task));
+}
+
+static void
+apk_polkit_search_files_owners_cb (GObject *object_source,
+                                   GAsyncResult *res,
+                                   gpointer user_data)
+{
+  g_autoptr (GTask) task = g_steal_pointer (&user_data);
+  GsPluginApk *self = g_task_get_source_object (task);
+  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GVariant) search_results = NULL;
+  GsAppList *search_list = g_task_get_task_data (task);
+
+  if (!apk_polkit2_call_search_files_owners_finish (self->proxy, &search_results, res, &local_error))
     {
       g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
+    }
+
+  g_assert (g_variant_n_children (search_results) == gs_app_list_length (search_list));
+  for (int i = 0; i < gs_app_list_length (search_list); i++)
+    {
+      g_autoptr (GVariant) apk_pkg_variant = NULL;
+      GsApp *app = gs_app_list_index (search_list, i);
+      ApkdPackage apk_pkg = { NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, Available };
+
+      apk_pkg_variant = g_variant_get_child_value (search_results, i);
+      if (!gs_plugin_apk_variant_to_apkd (apk_pkg_variant, &apk_pkg))
+        {
+          // TODO: We need fn_array if we want to print this info!
+          /* g_warning ("Couldn't find any package owning file '%s'", */
+          /*            fn_array[i]); */
+          continue;
+        }
+      g_debug ("Found pkgname '%s' for app %s: adding source and setting management plugin",
+               apk_pkg.name, gs_app_get_unique_id (app));
+      gs_app_add_source (app, apk_pkg.name);
+      gs_app_set_management_plugin (app, GS_PLUGIN (self));
+    }
+  g_task_return_boolean (task, TRUE);
+}
+
+static gboolean
+fix_app_missing_appstream_finish (GsPlugin *plugin,
+                                  GAsyncResult *res,
+                                  GError **error)
+{
+  return g_task_propagate_boolean (G_TASK (res), error);
+}
+
+static void
+apk_polkit_get_packages_details_cb (GObject *object_source,
+                                    GAsyncResult *res,
+                                    gpointer user_data);
+
+/**
+ * refine_apk_packages_cb:
+ * @plugin: The apk GsPlugin.
+ * @list: The list of apps to refine.
+ * @flags: TheGsPluginRefineFlags which determine what data we add.
+ * @cancellable: GCancellable to cancel resolving what app owns the appstream/desktop file.
+ * @task: The task to follow the asynchronous execution.
+ *
+ * Get details from apk package for a list of apps and fill-in requested refine data.
+ **/
+static void
+refine_apk_packages_cb (GObject *object_source,
+                        GAsyncResult *res,
+                        gpointer user_data)
+{
+  g_autoptr (GTask) task = G_TASK (g_steal_pointer (&user_data));
+  GCancellable *cancellable = g_task_get_cancellable (task);
+  GsPluginApk *self = g_task_get_source_object (task);
+  g_autofree const gchar **source_array = NULL;
+  guint details_flags = APK_POLKIT_CLIENT_DETAILS_FLAGS_PACKAGE_STATE;
+  RefineData *data = g_task_get_task_data (task);
+  GsAppList *list = data->refine_apps_list;
+  GsAppList *missing_pkgname_list = data->missing_pkgname_list;
+  GsPluginRefineFlags flags = data->flags;
+  g_autoptr (GError) local_error = NULL;
+
+  if (!fix_app_missing_appstream_finish (GS_PLUGIN (self), res, &local_error))
+    {
+      // TODO: We should print a warning, but continue execution!
+      // There's no reason failing to find some package should stop
+      // the rest of the processing.
+      g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
+    }
+
+  if (!(flags &
+        (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
+         GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
+         GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
+         GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
+         GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
+         GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
+         GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE)))
+    {
+      g_task_return_boolean (task, TRUE);
       return;
     }
 
@@ -877,23 +922,88 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
     {
       GsApp *app = gs_app_list_index (missing_pkgname_list, i);
       if (gs_app_get_source_default (app) != NULL)
-        gs_app_list_add (refine_apps_list, app);
+        gs_app_list_add (list, app);
     }
 
-  if (flags &
-      (GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_ORIGIN |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
-       GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE))
+  if (gs_app_list_length (list) == 0)
     {
-      if (!refine_apk_packages (plugin, refine_apps_list, flags, cancellable, &local_error))
+      g_task_return_boolean (task, TRUE);
+      return;
+    }
+
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION)
+    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_ALL;
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_VERSION)
+    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_VERSION;
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_DESCRIPTION)
+    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_DESCRIPTION;
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_SIZE)
+    details_flags |= (APK_POLKIT_CLIENT_DETAILS_FLAGS_SIZE |
+                      APK_POLKIT_CLIENT_DETAILS_FLAGS_INSTALLED_SIZE);
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL)
+    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_URL;
+  if (flags & GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE)
+    details_flags |= APK_POLKIT_CLIENT_DETAILS_FLAGS_LICENSE;
+
+  source_array = g_new0 (const gchar *, gs_app_list_length (list) + 1);
+  for (int i = 0; i < gs_app_list_length (list); i++)
+    {
+      GsApp *app = gs_app_list_index (list, i);
+      source_array[i] = gs_app_get_source_default (app);
+    }
+  source_array[gs_app_list_length (list)] = NULL;
+
+  apk_polkit2_call_get_packages_details (self->proxy, source_array,
+                                         details_flags,
+                                         cancellable,
+                                         apk_polkit_get_packages_details_cb,
+                                         g_steal_pointer (&task));
+}
+
+static void
+apk_polkit_get_packages_details_cb (GObject *object_source,
+                                    GAsyncResult *res,
+                                    gpointer user_data)
+{
+  g_autoptr (GTask) task = g_steal_pointer (&user_data);
+  GsPluginApk *self = g_task_get_source_object (task);
+  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GVariant) apk_pkgs = NULL;
+  RefineData *data = g_task_get_task_data (task);
+  GsAppList *list = data->refine_apps_list;
+
+  if (!apk_polkit2_call_get_packages_details_finish (self->proxy, &apk_pkgs, res, &local_error))
+    {
+      g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
+    }
+
+  g_assert (gs_app_list_length (list) == g_variant_n_children (apk_pkgs));
+  for (int i = 0; i < gs_app_list_length (list); i++)
+    {
+      g_autoptr (GVariant) apk_pkg_variant = NULL;
+      GsApp *app = gs_app_list_index (list, i);
+      const gchar *source = gs_app_get_source_default (app);
+      ApkdPackage apk_pkg = { NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, Available };
+
+      g_debug ("Refining %s", gs_app_get_unique_id (app));
+      apk_pkg_variant = g_variant_get_child_value (apk_pkgs, i);
+      if (!gs_plugin_apk_variant_to_apkd (apk_pkg_variant, &apk_pkg))
         {
-          g_task_return_error (task, g_steal_pointer (&local_error));
-          return;
+          if (g_strcmp0 (source, apk_pkg.name) != 0)
+            g_warning ("source: '%s' and the pkg name: '%s' differ", source, apk_pkg.name);
+          continue;
         }
+
+      if (g_strcmp0 (source, apk_pkg.name) != 0)
+        {
+          g_warning ("source: '%s' and the pkg name: '%s' differ", source, apk_pkg.name);
+          continue;
+        }
+      set_app_metadata (GS_PLUGIN (self), app, &apk_pkg);
+      /* We should only set generic apps for OS updates */
+      if (gs_app_get_kind (app) == AS_COMPONENT_KIND_GENERIC)
+        gs_app_set_special_kind (app, GS_APP_SPECIAL_KIND_OS_UPDATE);
     }
 
   g_task_return_boolean (task, TRUE);
