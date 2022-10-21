@@ -121,32 +121,34 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   g_autofree gchar *cache_name = NULL;
   cache_name = g_strdup_printf ("%s-%s", pkg->name, pkg->version);
   GsApp *app = gs_plugin_cache_lookup (plugin, cache_name);
-  if (app != NULL)
-    return app;
+  if (app == NULL)
+    {
+      app = gs_app_new (pkg->name);
 
-  app = gs_app_new (pkg->name);
+      gs_app_set_kind (app, AS_COMPONENT_KIND_GENERIC);
+      gs_app_set_bundle_kind (app, AS_BUNDLE_KIND_PACKAGE);
+      gs_app_set_scope (app, AS_COMPONENT_SCOPE_SYSTEM);
+      gs_app_set_allow_cancel (app, FALSE);
+      gs_app_add_source (app, pkg->name);
+      gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, pkg->name);
+      gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, pkg->description);
+      gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, pkg->url);
+      gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, pkg->license);
+      gs_app_set_origin (app, "alpine");
+      gs_app_set_origin_hostname (app, "alpinelinux.org");
+      gs_app_set_management_plugin (app, plugin);
+      gs_app_set_size_installed (app, pkg->installedSize);
+      gs_app_set_size_download (app, pkg->size);
+      gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
+      gs_app_set_metadata (app, "GnomeSoftware::PackagingFormat", "apk");
+      gs_app_set_version (app, pkg->version);
 
-  gs_app_set_kind (app, AS_COMPONENT_KIND_GENERIC);
-  gs_app_set_bundle_kind (app, AS_BUNDLE_KIND_PACKAGE);
-  gs_app_set_scope (app, AS_COMPONENT_SCOPE_SYSTEM);
-  gs_app_set_allow_cancel (app, FALSE);
-  gs_app_add_source (app, pkg->name);
-  gs_app_set_name (app, GS_APP_QUALITY_UNKNOWN, pkg->name);
-  gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, pkg->description);
-  gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, pkg->url);
-  gs_app_set_license (app, GS_APP_QUALITY_UNKNOWN, pkg->license);
-  gs_app_set_origin (app, "alpine");
-  gs_app_set_origin_hostname (app, "alpinelinux.org");
-  gs_app_set_management_plugin (app, plugin);
-  gs_app_set_size_installed (app, pkg->installedSize);
-  gs_app_set_size_download (app, pkg->size);
-  gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
-  gs_app_set_metadata (app, "GnomeSoftware::PackagingFormat", "apk");
+      gs_plugin_cache_add (plugin, cache_name, app);
+    }
+
   gs_app_set_state (app, apk_to_app_state (pkg->packageState));
-  gs_app_set_version (app, pkg->version);
   if (gs_app_get_state (app) == GS_APP_STATE_UPDATABLE_LIVE)
     gs_app_set_update_version (app, pkg->stagingVersion);
-  gs_plugin_cache_add (plugin, cache_name, app);
 
   return app;
 }
