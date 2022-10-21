@@ -512,7 +512,15 @@ gs_plugin_update (GsPlugin *plugin,
           GsApp *app = gs_app_list_index (update_list, i);
           gs_app_set_state_recover (app);
         }
-      /*gs_app_set_state_recover (app); TODO: Fix this! */
+
+      /* Roll-back apps from the original list with a quirk */
+      for (int i = 0; i < gs_app_list_length (list); i++)
+        {
+          GsApp *app = gs_app_list_index (list, i);
+          if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY))
+            gs_app_set_state_recover (app);
+        }
+
       return FALSE;
     }
 
