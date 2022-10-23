@@ -1,7 +1,7 @@
 project(
     'gnome-software-plugin-apk',
     ['c'],
-    version: '0.10.0',
+    version: '0.11.0',
     meson_version: '>=0.58'
 )
 
