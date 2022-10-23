@@ -4,7 +4,13 @@ ENV BRANCH=gnome-42
 # distroless/alpine-base only has main by default
 RUN echo "" >> /etc/apk/repositories \
     && echo https://dl-cdn.alpinelinux.org/alpine/edge/community >> /etc/apk/repositories
-RUN apk add --no-cache meson gnome-software-dev apk-polkit-rs-dev build-base \
+RUN apk add --no-cache curl meson cargo polkit-dev glib-dev clang-dev apk-tools-dev \
+    && curl -L -O https://gitlab.alpinelinux.org/Cogitri/apk-polkit-rs/-/archive/master/apk-polkit-rs-master.tar.gz \
+    && tar xf apk-polkit-rs-master.tar.gz \
+    && meson --prefix /usr apk-polkit-rs-master apk-polkit-rs-master/build \
+    && meson install -C apk-polkit-rs-master/build
+
+RUN apk add --no-cache meson gnome-software-dev build-base \
     curl gdk-pixbuf-dev libxmlb-dev glib-dev gtk4.0-dev libadwaita-dev \
     json-glib-dev libsoup3-dev gspell-dev polkit-dev libgudev-dev appstream-dev \
     desktop-file-utils gsettings-desktop-schemas-dev dbus
