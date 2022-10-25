@@ -138,8 +138,8 @@ apk_package_to_app (GsPlugin *plugin, ApkdPackage *pkg)
   gs_app_set_origin (app, "alpine");
   gs_app_set_origin_hostname (app, "alpinelinux.org");
   gs_app_set_management_plugin (app, plugin);
-  gs_app_set_size_installed (app, pkg->installedSize);
-  gs_app_set_size_download (app, pkg->size);
+  gs_app_set_size_installed (app, GS_SIZE_TYPE_VALID, pkg->installedSize);
+  gs_app_set_size_download (app, GS_SIZE_TYPE_VALID, pkg->size);
   gs_app_add_quirk (app, GS_APP_QUIRK_PROVENANCE);
   gs_app_set_metadata (app, "GnomeSoftware::PackagingFormat", "apk");
   gs_app_set_state (app, apk_to_app_state (pkg->packageState));
@@ -577,10 +577,10 @@ set_app_metadata (GsPlugin *plugin, GsApp *app, ApkdPackage *package)
     gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, package->description);
 
   if (package->size)
-    gs_app_set_size_download (app, package->size);
+    gs_app_set_size_download (app, GS_SIZE_TYPE_VALID, package->size);
 
   if (package->installedSize)
-    gs_app_set_size_installed (app, package->installedSize);
+    gs_app_set_size_installed (app, GS_SIZE_TYPE_VALID, package->installedSize);
 
   if (package->url)
     gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, package->url);
