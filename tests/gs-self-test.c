@@ -57,9 +57,7 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
 
   // Remove repository
   g_object_unref (plugin_job);
-  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_REMOVE_REPO,
-                                   "app", repo,
-                                   NULL);
+  plugin_job = gs_plugin_job_manage_repository_new (repo, GS_PLUGIN_MANAGE_REPOSITORY_FLAGS_REMOVE);
   rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
@@ -73,9 +71,7 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
 
   // gs_plugin_install_repo (reinstall it, check it works)
   g_object_unref (plugin_job);
-  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_INSTALL_REPO,
-                                   "app", repo,
-                                   NULL);
+  plugin_job = gs_plugin_job_manage_repository_new (repo, GS_PLUGIN_MANAGE_REPOSITORY_FLAGS_INSTALL);
   rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);

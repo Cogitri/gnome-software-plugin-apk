@@ -1130,18 +1130,38 @@ gs_plugin_add_sources (GsPlugin *plugin,
   return TRUE;
 }
 
-static gboolean
-gs_plugin_repo_update (GsPlugin *plugin,
-                       GsApp *repo,
-                       GCancellable *cancellable,
-                       GError **error,
-                       gboolean is_install)
+static void
+apk_polkit_remove_repository_cb (GObject *object_source,
+                                 GAsyncResult *res,
+                                 gpointer user_data);
+
+static void
+apk_polkit_add_repository_cb (GObject *object_source,
+                              GAsyncResult *res,
+                              gpointer user_data);
+
+static void
+gs_plugin_apk_repo_update_async (GsPlugin *plugin,
+                                 GsApp *repo,
+                                 gboolean is_install,
+                                 GCancellable *cancellable,
+                                 GAsyncReadyCallback callback,
+                                 gpointer user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
+  g_autoptr (GTask) task = NULL;
   g_autoptr (GError) local_error = NULL;
   const gchar *url = NULL;
   const gchar *action = is_install ? "Install" : "Remov";
-  int rc;
+
+  task = g_task_new (plugin, cancellable, callback, user_data);
+  g_task_set_task_data (task, g_object_ref (repo), g_object_unref);
+
+  if (!gs_app_has_management_plugin (repo, plugin))
+    {
+      g_task_return_boolean (task, TRUE);
+      return;
+    }
 
   gs_app_set_progress (repo, GS_APP_PROGRESS_UNKNOWN);
 
@@ -1149,60 +1169,118 @@ gs_plugin_repo_update (GsPlugin *plugin,
   g_debug ("%sing repository %s", action, url);
   if (is_install)
     {
-      rc = apk_polkit2_call_add_repository_sync (self->proxy,
-                                                 url,
-                                                 cancellable,
-                                                 &local_error);
+      g_task_set_source_tag (task, gs_plugin_apk_install_repository_async);
+      apk_polkit2_call_add_repository (self->proxy,
+                                       url,
+                                       cancellable,
+                                       apk_polkit_add_repository_cb,
+                                       g_steal_pointer (&task));
     }
   else
     {
-      rc = apk_polkit2_call_remove_repository_sync (self->proxy,
-                                                    url,
-                                                    cancellable,
-                                                    &local_error);
+      g_task_set_source_tag (task, gs_plugin_apk_remove_repository_async);
+      apk_polkit2_call_remove_repository (self->proxy,
+                                          url,
+                                          cancellable,
+                                          apk_polkit_remove_repository_cb,
+                                          g_steal_pointer (&task));
     }
-  if (!rc)
-    {
-      g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
-      gs_app_set_state_recover (repo);
-      return FALSE;
-    }
-
-  g_debug ("%sed repository %s", action, url);
-  return TRUE;
 }
 
-gboolean
-gs_plugin_install_repo (GsPlugin *plugin,
-                        GsApp *repo,
-                        GCancellable *cancellable,
-                        GError **error)
+static void
+apk_polkit_add_repository_cb (GObject *object_source,
+                              GAsyncResult *res,
+                              gpointer user_data)
 {
-  g_return_val_if_fail (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY, FALSE);
+  g_autoptr (GTask) task = G_TASK (g_steal_pointer (&user_data));
+  GsPluginApk *self = g_task_get_source_object (task);
+  g_autoptr (GError) local_error = NULL;
+  GsApp *repo = g_task_get_task_data (task);
+  const gchar *url = gs_app_get_metadata_item (repo, "apk::repo-url");
+
+  if (!apk_polkit2_call_add_repository_finish (self->proxy, res, &local_error))
+    {
+      gs_app_set_state_recover (repo);
+      g_dbus_error_strip_remote_error (local_error);
+      g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
+    }
+  g_debug ("Installed repository %s", url);
+  gs_app_set_state (repo, GS_APP_STATE_INSTALLED);
+
+  g_task_return_boolean (task, TRUE);
+}
+
+static void
+apk_polkit_remove_repository_cb (GObject *object_source,
+                                 GAsyncResult *res,
+                                 gpointer user_data)
+{
+  g_autoptr (GTask) task = G_TASK (g_steal_pointer (&user_data));
+  GsPluginApk *self = g_task_get_source_object (task);
+  g_autoptr (GError) local_error = NULL;
+  GsApp *repo = g_task_get_task_data (task);
+  const gchar *url = gs_app_get_metadata_item (repo, "apk::repo-url");
+
+  if (!apk_polkit2_call_remove_repository_finish (self->proxy, res, &local_error))
+    {
+      gs_app_set_state_recover (repo);
+      g_dbus_error_strip_remote_error (local_error);
+      g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
+    }
+
+  g_debug ("Removed repository %s", url);
+  gs_app_set_state (repo, GS_APP_STATE_AVAILABLE);
+
+  g_task_return_boolean (task, TRUE);
+}
+
+static gboolean
+gs_plugin_apk_install_repository_finish (GsPlugin *plugin,
+                                         GAsyncResult *res,
+                                         GError **error)
+{
+  return g_task_propagate_boolean (G_TASK (res), error);
+}
+
+static void
+gs_plugin_apk_install_repository_async (GsPlugin *plugin,
+                                        GsApp *repo,
+                                        GsPluginManageRepositoryFlags flags,
+                                        GCancellable *cancellable,
+                                        GAsyncReadyCallback callback,
+                                        gpointer user_data)
+{
+  g_assert (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY);
+
   gs_app_set_state (repo, GS_APP_STATE_INSTALLING);
 
-  if (!gs_plugin_repo_update (plugin, repo, cancellable, error, TRUE))
-    return FALSE;
-
-  gs_app_set_state (repo, GS_APP_STATE_INSTALLED);
-  return TRUE;
+  gs_plugin_apk_repo_update_async (plugin, repo, TRUE, cancellable, callback, user_data);
 }
 
-gboolean
-gs_plugin_remove_repo (GsPlugin *plugin,
-                       GsApp *repo,
-                       GCancellable *cancellable,
-                       GError **error)
+static gboolean
+gs_plugin_apk_remove_repository_finish (GsPlugin *plugin,
+                                        GAsyncResult *res,
+                                        GError **error)
 {
-  g_return_val_if_fail (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY, FALSE);
+  return g_task_propagate_boolean (G_TASK (res), error);
+}
+
+static void
+gs_plugin_apk_remove_repository_async (GsPlugin *plugin,
+                                       GsApp *repo,
+                                       GsPluginManageRepositoryFlags flags,
+                                       GCancellable *cancellable,
+                                       GAsyncReadyCallback callback,
+                                       gpointer user_data)
+
+{
+  g_assert (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY);
+
   gs_app_set_state (repo, GS_APP_STATE_REMOVING);
 
-  if (!gs_plugin_repo_update (plugin, repo, cancellable, error, FALSE))
-    return FALSE;
-
-  gs_app_set_state (repo, GS_APP_STATE_AVAILABLE);
-  return TRUE;
+  gs_plugin_apk_repo_update_async (plugin, repo, FALSE, cancellable, callback, user_data);
 }
 
 static void
@@ -1219,6 +1297,10 @@ gs_plugin_apk_class_init (GsPluginApkClass *klass)
   plugin_class->refine_finish = gs_plugin_apk_refine_finish;
   plugin_class->refresh_metadata_async = gs_plugin_apk_refresh_metadata_async;
   plugin_class->refresh_metadata_finish = gs_plugin_apk_refresh_metadata_finish;
+  plugin_class->install_repository_async = gs_plugin_apk_install_repository_async;
+  plugin_class->install_repository_finish = gs_plugin_apk_install_repository_finish;
+  plugin_class->remove_repository_async = gs_plugin_apk_remove_repository_async;
+  plugin_class->remove_repository_finish = gs_plugin_apk_remove_repository_finish;
 }
 
 GType
