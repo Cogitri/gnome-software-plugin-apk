@@ -1,6 +1,6 @@
 FROM ghcr.io/distroless/alpine-base:latest
 
-ENV BRANCH=gnome-42
+ENV BRANCH=gnome-43
 # distroless/alpine-base only has main by default
 RUN echo "" >> /etc/apk/repositories \
     && echo https://dl-cdn.alpinelinux.org/alpine/edge/community >> /etc/apk/repositories
@@ -13,11 +13,13 @@ RUN curl -L -O https://gitlab.gnome.org/GNOME/gnome-software/-/archive/${BRANCH}
     && cd gnome-software-${BRANCH} \
     && meson \
        --prefix /usr \
-       -Dvalgrind=false \
        -Dmalcontent=false \
        -Dpackagekit=false \
        -Dfwupd=false \
        -Dflatpak=false \
+       -Dwebapps=false \
+       -Dhardcoded_foss_webapps=false \
+       -Dhardcoded_proprietary_webapps=false \
        -Dgtk_doc=false \
        -Dman=false \
        -Dtests=false \
