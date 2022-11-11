@@ -783,7 +783,7 @@ fix_app_missing_appstream_async (GsPlugin *plugin,
   g_autoptr (GTask) task = NULL;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
-  g_task_set_source_tag (task, gs_plugin_apk_refine_async);
+  g_task_set_source_tag (task, fix_app_missing_appstream_async);
   g_task_set_task_data (task, g_object_ref (list), g_object_unref);
 
   if (gs_app_list_length (list) == 0)
