@@ -169,14 +169,16 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
   g_autoptr (GsPluginJob) plugin_job = NULL;
   g_autoptr (GsApp) app = NULL;
   g_autoptr (GsPlugin) plugin = NULL;
+  g_autoptr (GsAppQuery) query = NULL;
+  const char *keywords[2] = { "apk-test", NULL };
   gboolean rc;
 
   // Search for a non-installed app
-  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_SEARCH,
-                                   "search", "apk-test",
-                                   // We force refine to take ownership
-                                   "refine-flags", GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION,
-                                   NULL);
+  query = gs_app_query_new ("keywords", keywords,
+                            // We force refine to take ownership
+                            "refine-flags", GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION,
+                            NULL);
+  plugin_job = gs_plugin_job_list_apps_new (query, GS_PLUGIN_LIST_APPS_FLAGS_NONE);
   app = gs_plugin_loader_job_process_app (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
@@ -223,14 +225,16 @@ gs_plugins_apk_refine_app_missing_source (GsPluginLoader *plugin_loader)
   g_autoptr (GError) error = NULL;
   g_autoptr (GsPluginJob) plugin_job = NULL;
   g_autoptr (GsApp) app = NULL;
+  g_autoptr (GsAppQuery) query = NULL;
+  const char *keywords[2] = { "no-source", NULL };
   g_autoptr (GsPlugin) plugin = NULL;
 
   // Search for a non-installed app. Use a refine flag not being used
   // to force the run of the refine, but only fix the missing source
-  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_SEARCH,
-                                   "search", "no-source",
-                                   "refine-flags", GS_PLUGIN_REFINE_FLAGS_REQUIRE_KUDOS,
-                                   NULL);
+  query = gs_app_query_new ("keywords", keywords,
+                            "refine-flags", GS_PLUGIN_REFINE_FLAGS_REQUIRE_KUDOS,
+                            NULL);
+  plugin_job = gs_plugin_job_list_apps_new (query, GS_PLUGIN_LIST_APPS_FLAGS_NONE);
   app = gs_plugin_loader_job_process_app (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
