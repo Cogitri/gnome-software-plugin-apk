@@ -303,7 +303,7 @@ main (int argc, char **argv)
   g_setenv ("GS_SELF_TEST_CACHEDIR", tmp_root, TRUE);
 
   /* we can only load this once per process */
-  plugin_loader = gs_plugin_loader_new ();
+  plugin_loader = gs_plugin_loader_new (NULL, NULL);
   /* g_signal_connect (plugin_loader, "status-changed", */
   /*                   G_CALLBACK (gs_plugin_loader_status_changed_cb), NULL); */
   gs_plugin_loader_add_location (plugin_loader, LOCALPLUGINDIR);
