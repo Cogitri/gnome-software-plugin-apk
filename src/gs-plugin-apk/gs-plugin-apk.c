@@ -1146,6 +1146,61 @@ gs_plugin_apk_repo_update_async (GsPlugin *plugin,
                                  gboolean is_install,
                                  GCancellable *cancellable,
                                  GAsyncReadyCallback callback,
+                                 gpointer user_data);
+
+static gboolean
+gs_plugin_apk_install_repository_finish (GsPlugin *plugin,
+                                         GAsyncResult *res,
+                                         GError **error)
+{
+  return g_task_propagate_boolean (G_TASK (res), error);
+}
+
+static void
+gs_plugin_apk_install_repository_async (GsPlugin *plugin,
+                                        GsApp *repo,
+                                        GsPluginManageRepositoryFlags flags,
+                                        GCancellable *cancellable,
+                                        GAsyncReadyCallback callback,
+                                        gpointer user_data)
+{
+  g_assert (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY);
+
+  gs_app_set_state (repo, GS_APP_STATE_INSTALLING);
+
+  gs_plugin_apk_repo_update_async (plugin, repo, TRUE, cancellable, callback, user_data);
+}
+
+static gboolean
+gs_plugin_apk_remove_repository_finish (GsPlugin *plugin,
+                                        GAsyncResult *res,
+                                        GError **error)
+{
+  return g_task_propagate_boolean (G_TASK (res), error);
+}
+
+static void
+gs_plugin_apk_remove_repository_async (GsPlugin *plugin,
+                                       GsApp *repo,
+                                       GsPluginManageRepositoryFlags flags,
+                                       GCancellable *cancellable,
+                                       GAsyncReadyCallback callback,
+                                       gpointer user_data)
+
+{
+  g_assert (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY);
+
+  gs_app_set_state (repo, GS_APP_STATE_REMOVING);
+
+  gs_plugin_apk_repo_update_async (plugin, repo, FALSE, cancellable, callback, user_data);
+}
+
+static void
+gs_plugin_apk_repo_update_async (GsPlugin *plugin,
+                                 GsApp *repo,
+                                 gboolean is_install,
+                                 GCancellable *cancellable,
+                                 GAsyncReadyCallback callback,
                                  gpointer user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
@@ -1234,53 +1289,6 @@ apk_polkit_remove_repository_cb (GObject *object_source,
   gs_app_set_state (repo, GS_APP_STATE_AVAILABLE);
 
   g_task_return_boolean (task, TRUE);
-}
-
-static gboolean
-gs_plugin_apk_install_repository_finish (GsPlugin *plugin,
-                                         GAsyncResult *res,
-                                         GError **error)
-{
-  return g_task_propagate_boolean (G_TASK (res), error);
-}
-
-static void
-gs_plugin_apk_install_repository_async (GsPlugin *plugin,
-                                        GsApp *repo,
-                                        GsPluginManageRepositoryFlags flags,
-                                        GCancellable *cancellable,
-                                        GAsyncReadyCallback callback,
-                                        gpointer user_data)
-{
-  g_assert (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY);
-
-  gs_app_set_state (repo, GS_APP_STATE_INSTALLING);
-
-  gs_plugin_apk_repo_update_async (plugin, repo, TRUE, cancellable, callback, user_data);
-}
-
-static gboolean
-gs_plugin_apk_remove_repository_finish (GsPlugin *plugin,
-                                        GAsyncResult *res,
-                                        GError **error)
-{
-  return g_task_propagate_boolean (G_TASK (res), error);
-}
-
-static void
-gs_plugin_apk_remove_repository_async (GsPlugin *plugin,
-                                       GsApp *repo,
-                                       GsPluginManageRepositoryFlags flags,
-                                       GCancellable *cancellable,
-                                       GAsyncReadyCallback callback,
-                                       gpointer user_data)
-
-{
-  g_assert (gs_app_get_kind (repo) == AS_COMPONENT_KIND_REPOSITORY);
-
-  gs_app_set_state (repo, GS_APP_STATE_REMOVING);
-
-  gs_plugin_apk_repo_update_async (plugin, repo, FALSE, cancellable, callback, user_data);
 }
 
 static void
