@@ -256,6 +256,7 @@ main (int argc, char **argv)
   g_autofree gchar *tmp_root = NULL;
   g_autoptr (GsPluginLoader) plugin_loader = NULL;
   g_autoptr (GSettings) settings = NULL;
+  g_autoptr (GDBusConnection) bus_connection = NULL;
   g_autoptr (GError) error = NULL;
   gboolean ret;
   int retval;
@@ -303,8 +304,10 @@ main (int argc, char **argv)
   g_assert_true (tmp_root != NULL);
   g_setenv ("GS_SELF_TEST_CACHEDIR", tmp_root, TRUE);
 
+  bus_connection = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, &error);
+  g_assert_no_error (error);
   /* we can only load this once per process */
-  plugin_loader = gs_plugin_loader_new (NULL, NULL);
+  plugin_loader = gs_plugin_loader_new (bus_connection, bus_connection);
   /* g_signal_connect (plugin_loader, "status-changed", */
   /*                   G_CALLBACK (gs_plugin_loader_status_changed_cb), NULL); */
   gs_plugin_loader_add_location (plugin_loader, LOCALPLUGINDIR);
