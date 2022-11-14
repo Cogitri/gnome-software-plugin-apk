@@ -1018,6 +1018,19 @@ apk_polkit_get_packages_details_cb (GObject *object_source,
 }
 
 gboolean
+gs_plugin_launch (GsPlugin *plugin,
+                  GsApp *app,
+                  GCancellable *cancellable,
+                  GError **error)
+{
+  /* only process this app if was created by this plugin */
+  if (!gs_app_has_management_plugin (app, plugin))
+    return TRUE;
+
+  return gs_plugin_app_launch (plugin, app, error);
+}
+
+gboolean
 gs_plugin_add_sources (GsPlugin *plugin,
                        GsAppList *list,
                        GCancellable *cancellable,
