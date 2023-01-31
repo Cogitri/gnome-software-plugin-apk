@@ -740,6 +740,15 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
           continue;
         }
 
+      /* If we reached here, the app is valid and under our responsibility.
+         Therefore, we have to make sure that it stays valid. For that purpose,
+         if the state is unknown, force refining by setting the SETUP_ACTION
+         flag. This has the drawback that it forces a refine for all other apps.
+         The alternative would be to have yet another app list. But since this
+         is expected to happen very seldomly, it should be fine */
+      if (gs_app_get_state (app) == GS_APP_STATE_UNKNOWN)
+        data->flags |= GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION;
+
       gs_app_list_add (refine_apps_list, app);
     }
 
