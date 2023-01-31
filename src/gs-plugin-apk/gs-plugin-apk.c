@@ -545,18 +545,13 @@ gs_plugin_update (GsPlugin *plugin,
 void
 gs_plugin_adopt_app (GsPlugin *plugin, GsApp *app)
 {
-  if (gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_PACKAGE &&
-      gs_app_get_scope (app) == AS_COMPONENT_SCOPE_SYSTEM)
-    {
-      g_debug ("Adopted app %s", gs_app_get_unique_id (app));
-      gs_app_set_management_plugin (app, plugin);
-    }
+  g_debug ("App to adopt: %s", gs_app_get_id (app));
+
+  if (gs_app_get_bundle_kind (app) == AS_BUNDLE_KIND_PACKAGE && gs_app_get_scope (app) == AS_COMPONENT_SCOPE_SYSTEM)
+    gs_app_set_management_plugin (app, plugin);
 
   if (gs_app_get_kind (app) == AS_COMPONENT_KIND_OPERATING_SYSTEM)
-    {
-      g_debug ("Adopted app %s", gs_app_get_unique_id (app));
-      gs_app_set_management_plugin (app, plugin);
-    }
+    gs_app_set_management_plugin (app, plugin);
 }
 
 /**
