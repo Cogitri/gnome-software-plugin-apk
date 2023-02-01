@@ -5,7 +5,7 @@ project(
     meson_version: '>=0.58'
 )
 
-gnome_software_dep = dependency('gnome-software', version: '>=42.0')
+gnome_software_dep = dependency('gnome-software', version: '>=43.0')
 plugin_install_dir = gnome_software_dep.get_variable('plugindir')
 
 cargs = ['-DG_LOG_DOMAIN="GsPluginApk"', '-DI_KNOW_THE_GNOME_SOFTWARE_API_IS_SUBJECT_TO_CHANGE']
