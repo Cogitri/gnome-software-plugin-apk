@@ -111,7 +111,7 @@ gs_plugins_apk_updates (GsPluginLoader *plugin_loader)
   GsApp *system_app = NULL;
   g_autoptr (GsApp) foreign_app = NULL;
   g_autoptr (GsAppList) update_list = NULL;
-  g_autoptr (GsAppList) updated_list = NULL;
+  gboolean ret;
   GsAppList *related = NULL;
 
   // List updates
@@ -137,29 +137,31 @@ gs_plugins_apk_updates (GsPluginLoader *plugin_loader)
   system_app = gs_app_list_index (related, 0);
   g_assert_cmpint (gs_app_get_state (system_app), ==, GS_APP_STATE_UPDATABLE_LIVE);
 
-  // Execute update!
+  // Add app that shouldn't be updated
   foreign_app = gs_app_new ("foreign");
+  gs_app_set_state (foreign_app, GS_APP_STATE_UPDATABLE_LIVE);
   gs_app_list_add (update_list, foreign_app); // No management plugin, should get ignored!
+  // Execute update!
   g_object_unref (plugin_job);
   plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_UPDATE,
                                    "list", update_list,
                                    NULL);
-  updated_list = gs_plugin_loader_job_process (plugin_loader, plugin_job, NULL, &error);
+  ret = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
-  g_assert_nonnull (updated_list);
+  g_assert_true (ret);
 
   // Check desktop app: TODO: Check logs!
-  desktop_app = gs_app_list_index (updated_list, 0);
-  g_assert_nonnull (desktop_app);
   g_assert_cmpint (gs_app_get_state (desktop_app), ==, GS_APP_STATE_INSTALLED);
   // Check generic proxy app: TODO: Check logs!
-  generic_app = gs_app_list_index (updated_list, 1);
   g_assert_true (gs_app_has_quirk (generic_app, GS_APP_QUIRK_IS_PROXY));
+  g_assert_cmpint (gs_app_get_state (generic_app), ==, GS_APP_STATE_INSTALLED);
   related = gs_app_get_related (generic_app);
   g_assert_cmpint (gs_app_list_length (related), ==, 1);
   system_app = gs_app_list_index (related, 0);
   g_assert_cmpint (gs_app_get_state (system_app), ==, GS_APP_STATE_INSTALLED);
+  // Check foreign app: As it was!
+  g_assert_cmpint (gs_app_get_state (foreign_app), ==, GS_APP_STATE_UPDATABLE_LIVE);
 }
 
 static void
