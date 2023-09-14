@@ -479,22 +479,54 @@ gs_plugin_apk_prepare_update (GsPlugin *plugin,
   return added;
 }
 
-gboolean
-gs_plugin_update (GsPlugin *plugin,
-                  GsAppList *list,
-                  GCancellable *cancellable,
-                  GError **error)
+static void
+upgrade_apk_packages_cb (GObject *object_source,
+                         GAsyncResult *res,
+                         gpointer user_data);
+
+static void
+gs_plugin_apk_update_apps_async (GsPlugin *plugin,
+                                 GsAppList *list,
+                                 GsPluginUpdateAppsFlags flags,
+                                 GsPluginProgressCallback progress_callback,
+                                 gpointer progress_user_data,
+                                 GsPluginAppNeedsUserActionCallback app_needs_user_action_callback,
+                                 gpointer app_needs_user_action_data,
+                                 GCancellable *cancellable,
+                                 GAsyncReadyCallback callback,
+                                 gpointer user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GError) local_error = NULL;
-  g_autoptr (GsAppList) list_installing = gs_app_list_new ();
+  g_autoptr (GTask) task = NULL;
+  GsAppList *list_installing = gs_app_list_new ();
   unsigned int num_sources;
   g_autofree const gchar **source_array = NULL;
+
+  g_debug ("Updating apps");
+
+  task = g_task_new (plugin, cancellable, callback, user_data);
+  g_task_set_source_tag (task, gs_plugin_apk_update_apps_async);
+
+  if (!(flags & GS_PLUGIN_UPDATE_APPS_FLAGS_NO_DOWNLOAD))
+    {
+      // This needs polkit changes. Ideally we'd download first, and
+      // apply from cache then. We should probably test this out in
+      // pmOS release upgrader script first
+      g_warning ("We don't implement 'NO_DOWNLOAD'");
+    }
+
+  if (flags & GS_PLUGIN_UPDATE_APPS_FLAGS_NO_APPLY)
+    {
+      g_task_return_boolean (task, TRUE);
+      return;
+    }
 
   /* update UI as this might take some time */
   gs_plugin_status_update (plugin, NULL, GS_PLUGIN_STATUS_WAITING);
 
   num_sources = gs_plugin_apk_prepare_update (plugin, list, list_installing);
+
+  g_debug ("Found %u apps to update", num_sources);
 
   source_array = g_new0 (const gchar *, num_sources + 1);
   for (int i = 0; i < num_sources;)
@@ -508,8 +540,22 @@ gs_plugin_update (GsPlugin *plugin,
         }
     }
 
-  if (!apk_polkit2_call_upgrade_packages_sync (self->proxy, source_array,
-                                               cancellable, &local_error))
+  g_task_set_task_data (task, g_steal_pointer (&list_installing), g_object_unref);
+  apk_polkit2_call_upgrade_packages (self->proxy, source_array, cancellable,
+                                     upgrade_apk_packages_cb, g_steal_pointer (&task));
+}
+
+static void
+upgrade_apk_packages_cb (GObject *object_source,
+                         GAsyncResult *res,
+                         gpointer user_data)
+{
+  g_autoptr (GTask) task = G_TASK (g_steal_pointer (&user_data));
+  GsPluginApk *self = g_task_get_source_object (task);
+  GsAppList *list_installing = g_task_get_task_data (task);
+  g_autoptr (GError) local_error = NULL;
+
+  if (!apk_polkit2_call_upgrade_packages_finish (self->proxy, res, &local_error))
     {
       /* When and upgrade transaction failed, it could be out of two reasons:
        * - The world constraints couldn't match. In that case, nothing was
@@ -522,14 +568,14 @@ gs_plugin_update (GsPlugin *plugin,
        * and which didn't, so also recover everything and hope the refine
        * takes care of fixing things in the aftermath. */
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
       for (int i = 0; i < gs_app_list_length (list_installing); i++)
         {
           GsApp *app = gs_app_list_index (list_installing, i);
           gs_app_set_state_recover (app);
         }
 
-      return FALSE;
+      g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
     }
 
   for (int i = 0; i < gs_app_list_length (list_installing); i++)
@@ -538,8 +584,18 @@ gs_plugin_update (GsPlugin *plugin,
       gs_app_set_state (app, GS_APP_STATE_INSTALLED);
     }
 
-  gs_plugin_updates_changed (plugin);
-  return TRUE;
+  g_debug ("All apps updated correctly");
+
+  gs_plugin_updates_changed (GS_PLUGIN (self));
+  g_task_return_boolean (task, TRUE);
+}
+
+static gboolean
+gs_plugin_apk_update_apps_finish (GsPlugin *plugin,
+                                  GAsyncResult *result,
+                                  GError **error)
+{
+  return g_task_propagate_boolean (G_TASK (result), error);
 }
 
 void
@@ -1327,6 +1383,8 @@ gs_plugin_apk_class_init (GsPluginApkClass *klass)
   plugin_class->install_repository_finish = gs_plugin_apk_install_repository_finish;
   plugin_class->remove_repository_async = gs_plugin_apk_remove_repository_async;
   plugin_class->remove_repository_finish = gs_plugin_apk_remove_repository_finish;
+  plugin_class->update_apps_async = gs_plugin_apk_update_apps_async;
+  plugin_class->update_apps_finish = gs_plugin_apk_update_apps_finish;
 }
 
 GType
