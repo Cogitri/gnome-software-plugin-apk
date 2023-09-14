@@ -436,12 +436,15 @@ gs_plugin_app_remove (GsPlugin *plugin,
  * over the apps from @list, takes care that it is possible to update them,
  * and when they are ready to be updated, adds them to @ready.
  *
+ * Returns: Number of non-proxy apps added to the list
  **/
-static void
+static unsigned int
 gs_plugin_apk_prepare_update (GsPlugin *plugin,
                               GsAppList *list,
                               GsAppList *ready)
 {
+  unsigned int added = 0;
+
   for (guint i = 0; i < gs_app_list_length (list); i++)
     {
       GsApp *app;
@@ -451,8 +454,14 @@ gs_plugin_apk_prepare_update (GsPlugin *plugin,
        * a proxy (and thus might contain some apps owned by us) */
       if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY))
         {
-          gs_plugin_apk_prepare_update (plugin, gs_app_get_related (app), ready);
-          gs_app_set_state (app, GS_APP_STATE_INSTALLING);
+          unsigned int proxy_added;
+          proxy_added = gs_plugin_apk_prepare_update (plugin, gs_app_get_related (app), ready);
+          if (proxy_added)
+            {
+              gs_app_set_state (app, GS_APP_STATE_INSTALLING);
+              gs_app_list_add (ready, app);
+              added += proxy_added;
+            }
           continue;
         }
 
@@ -464,9 +473,10 @@ gs_plugin_apk_prepare_update (GsPlugin *plugin,
         }
 
       gs_app_set_state (app, GS_APP_STATE_INSTALLING);
-
       gs_app_list_add (ready, app);
+      added++;
     }
+  return added;
 }
 
 gboolean
@@ -477,19 +487,25 @@ gs_plugin_update (GsPlugin *plugin,
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GError) local_error = NULL;
-  g_autoptr (GsAppList) update_list = gs_app_list_new ();
+  g_autoptr (GsAppList) list_installing = gs_app_list_new ();
+  unsigned int num_sources;
   g_autofree const gchar **source_array = NULL;
 
   /* update UI as this might take some time */
   gs_plugin_status_update (plugin, NULL, GS_PLUGIN_STATUS_WAITING);
 
-  gs_plugin_apk_prepare_update (plugin, list, update_list);
+  num_sources = gs_plugin_apk_prepare_update (plugin, list, list_installing);
 
-  source_array = g_new0 (const gchar *, gs_app_list_length (update_list) + 1);
-  for (int i = 0; i < gs_app_list_length (update_list); i++)
+  source_array = g_new0 (const gchar *, num_sources + 1);
+  for (int i = 0; i < num_sources;)
     {
-      GsApp *app = gs_app_list_index (update_list, i);
-      source_array[i] = gs_app_get_source_default (app);
+      GsApp *app = gs_app_list_index (list_installing, i);
+      const gchar *source = gs_app_get_source_default (app);
+      if (source)
+        {
+          source_array[i] = source;
+          i++;
+        }
     }
 
   if (!apk_polkit2_call_upgrade_packages_sync (self->proxy, source_array,
@@ -507,35 +523,19 @@ gs_plugin_update (GsPlugin *plugin,
        * takes care of fixing things in the aftermath. */
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
-      for (int i = 0; i < gs_app_list_length (update_list); i++)
+      for (int i = 0; i < gs_app_list_length (list_installing); i++)
         {
-          GsApp *app = gs_app_list_index (update_list, i);
+          GsApp *app = gs_app_list_index (list_installing, i);
           gs_app_set_state_recover (app);
-        }
-
-      /* Roll-back apps from the original list with a quirk */
-      for (int i = 0; i < gs_app_list_length (list); i++)
-        {
-          GsApp *app = gs_app_list_index (list, i);
-          if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY))
-            gs_app_set_state_recover (app);
         }
 
       return FALSE;
     }
 
-  for (int i = 0; i < gs_app_list_length (update_list); i++)
+  for (int i = 0; i < gs_app_list_length (list_installing); i++)
     {
-      GsApp *app = gs_app_list_index (update_list, i);
+      GsApp *app = gs_app_list_index (list_installing, i);
       gs_app_set_state (app, GS_APP_STATE_INSTALLED);
-    }
-
-  /* Roll-back apps from the original list with a quirk */
-  for (int i = 0; i < gs_app_list_length (list); i++)
-    {
-      GsApp *app = gs_app_list_index (list, i);
-      if (gs_app_has_quirk (app, GS_APP_QUIRK_IS_PROXY))
-        gs_app_set_state (app, GS_APP_STATE_INSTALLED);
     }
 
   gs_plugin_updates_changed (plugin);
