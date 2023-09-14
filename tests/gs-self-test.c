@@ -143,9 +143,8 @@ gs_plugins_apk_updates (GsPluginLoader *plugin_loader)
   gs_app_list_add (update_list, foreign_app); // No management plugin, should get ignored!
   // Execute update!
   g_object_unref (plugin_job);
-  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_UPDATE,
-                                   "list", update_list,
-                                   NULL);
+  plugin_job = gs_plugin_job_update_apps_new (update_list,
+                                              GS_PLUGIN_UPDATE_APPS_FLAGS_NO_DOWNLOAD);
   ret = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
