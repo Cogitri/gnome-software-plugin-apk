@@ -18,7 +18,7 @@ APK_POLKIT_STATE_DOWNGRADABLE = 5
 BUS_NAME   = 'dev.Cogitri.apkPolkit2'
 MAIN_OBJ   = '/dev/Cogitri/apkPolkit2'
 MAIN_IFACE = 'dev.Cogitri.apkPolkit2'
-SYSTEM_BUS = True
+SYSTEM_BUS = False
 
 def load(mock, parameters):
     repos = [

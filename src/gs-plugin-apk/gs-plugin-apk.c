@@ -214,13 +214,16 @@ gs_plugin_apk_setup_async (GsPlugin *plugin,
                            gpointer user_data)
 {
   g_autoptr (GTask) task = NULL;
+  GBusType bus_type = G_BUS_TYPE_SYSTEM;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_setup_async);
 
   g_debug ("Initializing plugin");
 
-  apk_polkit2_proxy_new_for_bus (G_BUS_TYPE_SYSTEM,
+  if (g_getenv ("G_TEST_SRCDIR"))
+    bus_type = G_BUS_TYPE_SESSION;
+  apk_polkit2_proxy_new_for_bus (bus_type,
                                  G_DBUS_PROXY_FLAGS_NONE,
                                  "dev.Cogitri.apkPolkit2",
                                  "/dev/Cogitri/apkPolkit2",
