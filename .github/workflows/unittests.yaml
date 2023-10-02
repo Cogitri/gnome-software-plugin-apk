@@ -22,4 +22,4 @@ jobs:
         run: meson build && ninja -C build
 
       - name: Test
-        run: dbus-daemon --system --fork --nopidfile && dbus-run-session -- meson test -v -C build
+        run: dbus-run-session -- meson test -v -C build

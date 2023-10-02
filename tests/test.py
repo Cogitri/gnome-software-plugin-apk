@@ -27,6 +27,9 @@ class GsPluginApkTest (DBusTestCase):
     def tearDown(self):
         if self.log is not None:
             self.log.close()
+        if self.p_mock:
+            self.p_mock.terminate()
+            self.p_mock.wait()
 
     def test_apk(self):
         builddir = os.getenv('G_TEST_BUILDDIR')
