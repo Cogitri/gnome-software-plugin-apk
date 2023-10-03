@@ -8,7 +8,11 @@ project(
 gnome_software_dep = dependency('gnome-software', version: '>=44.0')
 plugin_install_dir = gnome_software_dep.get_variable('plugindir')
 
-cargs = ['-DG_LOG_DOMAIN="GsPluginApk"', '-DI_KNOW_THE_GNOME_SOFTWARE_API_IS_SUBJECT_TO_CHANGE']
+cargs = [
+  '-DG_LOG_DOMAIN="GsPluginApk"',
+  '-DI_KNOW_THE_GNOME_SOFTWARE_API_IS_SUBJECT_TO_CHANGE',
+  '-DGS_PLUGIN_APK_VERSION="@0@"'.format(meson.project_version()),
+]
 
 apk_dep = dependency('apk-polkit-client-2')
 glib_dep = dependency('glib-2.0', version: '>=2.60')

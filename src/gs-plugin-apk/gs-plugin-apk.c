@@ -218,7 +218,7 @@ gs_plugin_apk_setup_async (GsPlugin *plugin,
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_setup_async);
 
-  g_debug ("Initializing plugin");
+  g_debug ("APK plugin version: %s", GS_PLUGIN_APK_VERSION);
 
   apk_polkit2_proxy_new (gs_plugin_get_system_bus_connection (plugin),
                          G_DBUS_PROXY_FLAGS_NONE,
