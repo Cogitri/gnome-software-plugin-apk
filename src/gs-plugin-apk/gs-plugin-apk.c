@@ -1112,23 +1112,65 @@ gs_plugin_apk_launch_async (GsPlugin *plugin,
   gs_plugin_app_launch_filtered_async (plugin, app, flags, gs_plugin_apk_filter_desktop_file_cb, NULL, cancellable, callback, user_data);
 }
 
-gboolean
-gs_plugin_add_sources (GsPlugin *plugin,
-                       GsAppList *list,
-                       GCancellable *cancellable,
-                       GError **error)
+static GsAppList *
+gs_plugin_apk_list_apps_finish (GsPlugin *plugin,
+                                       GAsyncResult *result,
+                                       GError **error)
+{
+  return g_task_propagate_pointer (G_TASK (result), error);
+}
+
+static void
+apk_polkit_list_repositories_cb (GObject *object_source,
+                                 GAsyncResult *res,
+                                 gpointer user_data);
+
+static void
+gs_plugin_apk_list_apps_async (GsPlugin *plugin,
+                                      GsAppQuery *query,
+                                      GsPluginListAppsFlags flags,
+                                      GCancellable *cancellable,
+                                      GAsyncReadyCallback callback,
+                                      gpointer user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GVariant) repositories = NULL;
+  g_autoptr (GTask) task = NULL;
+
+  task = g_task_new (plugin, cancellable, callback, user_data);
+  g_task_set_source_tag (task, gs_plugin_apk_list_apps_async);
+
+  if (gs_app_query_get_is_source (query) == GS_APP_QUERY_TRISTATE_TRUE)
+    {
+      g_debug ("Listing repositories");
+      apk_polkit2_call_list_repositories (self->proxy, cancellable,
+                                          apk_polkit_list_repositories_cb,
+                                          g_steal_pointer (&task));
+    }
+  else
+    {
+      g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                               "Unsupported query");
+    }
+}
+
+static void
+apk_polkit_list_repositories_cb (GObject *object_source,
+                                 GAsyncResult *res,
+                                 gpointer user_data)
+{
+  g_autoptr (GTask) task = G_TASK (g_steal_pointer (&user_data));
+  GsPluginApk *self = g_task_get_source_object (task);
   g_autoptr (GError) local_error = NULL;
+  g_autoptr (GVariant) repositories = NULL;
+  g_autoptr (GsAppList) list = gs_app_list_new ();
 
-  g_debug ("Adding repositories");
-
-  if (!apk_polkit2_call_list_repositories_sync (self->proxy, &repositories, cancellable, &local_error))
+  if (!apk_polkit2_call_list_repositories_finish (self->proxy,
+                                                  &repositories, res,
+                                                  &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
-      return FALSE;
+      g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
     }
 
   for (gsize i = 0; i < g_variant_n_children (repositories); i++)
@@ -1157,9 +1199,11 @@ gs_plugin_add_sources (GsPlugin *plugin,
       g_debug ("Adding repository  %s", url);
 
       g_uri_split (url, G_URI_FLAGS_NONE, &url_scheme, NULL,
-                   NULL, NULL, &url_path, NULL, NULL, error);
-      if (*error)
-        return FALSE;
+                   NULL, NULL, &url_path, NULL, NULL, &local_error);
+      if (local_error) {
+	      g_task_return_error (task, g_steal_pointer (&local_error));
+	      return;
+      }
 
       /* Transform /some/repo/url into some.repo.url
          We are not allowed to use '/' in the app id. */
@@ -1202,14 +1246,14 @@ gs_plugin_add_sources (GsPlugin *plugin,
       gs_app_set_summary (app, GS_APP_QUALITY_UNKNOWN, description);
       gs_app_set_url (app, AS_URL_KIND_HOMEPAGE, url);
       gs_app_set_metadata (app, "apk::repo-url", url);
-      gs_app_set_management_plugin (app, plugin);
-      gs_plugin_cache_add (plugin, url, app);
+      gs_app_set_management_plugin (app, GS_PLUGIN (self));
+      gs_plugin_cache_add (GS_PLUGIN (self), url, app);
       gs_app_list_add (list, g_steal_pointer (&app));
     }
 
   g_debug ("Added repositories");
 
-  return TRUE;
+  g_task_return_pointer (task, g_steal_pointer (&list), g_object_unref);
 }
 
 static void
@@ -1395,6 +1439,8 @@ gs_plugin_apk_class_init (GsPluginApkClass *klass)
   plugin_class->update_apps_finish = gs_plugin_apk_update_apps_finish;
   plugin_class->launch_async = gs_plugin_apk_launch_async;
   plugin_class->launch_finish = gs_plugin_apk_launch_finish;
+  plugin_class->list_apps_async = gs_plugin_apk_list_apps_async;
+  plugin_class->list_apps_finish = gs_plugin_apk_list_apps_finish;
 }
 
 GType

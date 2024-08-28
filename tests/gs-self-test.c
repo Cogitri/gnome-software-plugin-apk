@@ -26,38 +26,40 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
   g_autoptr (GError) error = NULL;
   g_autoptr (GsPluginJob) plugin_job = NULL;
   g_autoptr (GsAppList) list = NULL;
-  g_autoptr (GsPlugin) plugin = NULL;
-  GsApp *repo = NULL;
+  g_autoptr (GsAppQuery) query = NULL;
+  GsApp *del_repo = NULL;
   gboolean rc;
 
-  // Execute get sources action
-  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_GET_SOURCES, NULL);
+  // Get apps which are sources
+  query = gs_app_query_new ("is-source", GS_APP_QUERY_TRISTATE_TRUE, NULL);
+  plugin_job = gs_plugin_job_list_apps_new (query, GS_PLUGIN_LIST_APPS_FLAGS_NONE);
   list = gs_plugin_loader_job_process (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
   g_assert_nonnull (list);
 
-  // Verify correctness of result. TODO: for loop and check app name
   g_assert_cmpint (gs_app_list_length (list), ==, 3);
-  repo = gs_app_list_index (list, 0);
-  plugin = GS_PLUGIN (gs_app_dup_management_plugin (repo));
-  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
-  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_INSTALLED);
-  g_assert_cmpstr (gs_plugin_get_name (plugin), ==, "apk");
-  repo = gs_app_list_index (list, 1);
-  plugin = GS_PLUGIN (gs_app_dup_management_plugin (repo));
-  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
-  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_AVAILABLE);
-  g_assert_cmpstr (gs_plugin_get_name (plugin), ==, "apk");
-  repo = gs_app_list_index (list, 2);
-  plugin = GS_PLUGIN (gs_app_dup_management_plugin (repo));
-  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
-  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_INSTALLED);
-  g_assert_cmpstr (gs_plugin_get_name (plugin), ==, "apk");
+  for (int i = 0; i < gs_app_list_length (list); i++)
+    {
+      GsApp *repo = gs_app_list_index (list, i);
+      const gchar *url = gs_app_get_url (repo, AS_URL_KIND_HOMEPAGE);
+      g_autoptr (GsPlugin) plugin = GS_PLUGIN (gs_app_dup_management_plugin (repo));
+      g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
+      g_assert_cmpstr (gs_plugin_get_name (plugin), ==, "apk");
+      if (g_str_equal (url, "https://pmos.org/pmos/master"))
+        {
+          g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_AVAILABLE);
+        }
+      else
+        {
+          g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_INSTALLED);
+          del_repo = repo;
+        }
+    }
 
   // Remove repository
   g_object_unref (plugin_job);
-  plugin_job = gs_plugin_job_manage_repository_new (repo, GS_PLUGIN_MANAGE_REPOSITORY_FLAGS_REMOVE);
+  plugin_job = gs_plugin_job_manage_repository_new (del_repo, GS_PLUGIN_MANAGE_REPOSITORY_FLAGS_REMOVE);
   rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
@@ -66,20 +68,20 @@ gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
   // Verify repo status.
   // TODO: With a more complex DBusMock we could even check the count
   // Alternatively, we should check the logs that DBus got called
-  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
-  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_AVAILABLE);
+  g_assert_cmpint (gs_app_get_kind (del_repo), ==, AS_COMPONENT_KIND_REPOSITORY);
+  g_assert_cmpint (gs_app_get_state (del_repo), ==, GS_APP_STATE_AVAILABLE);
 
   // gs_plugin_install_repo (reinstall it, check it works)
   g_object_unref (plugin_job);
-  plugin_job = gs_plugin_job_manage_repository_new (repo, GS_PLUGIN_MANAGE_REPOSITORY_FLAGS_INSTALL);
+  plugin_job = gs_plugin_job_manage_repository_new (del_repo, GS_PLUGIN_MANAGE_REPOSITORY_FLAGS_INSTALL);
   rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
   g_assert_true (rc);
 
   // Verify repo status
-  g_assert_cmpint (gs_app_get_kind (repo), ==, AS_COMPONENT_KIND_REPOSITORY);
-  g_assert_cmpint (gs_app_get_state (repo), ==, GS_APP_STATE_INSTALLED);
+  g_assert_cmpint (gs_app_get_kind (del_repo), ==, AS_COMPONENT_KIND_REPOSITORY);
+  g_assert_cmpint (gs_app_get_state (del_repo), ==, GS_APP_STATE_INSTALLED);
 
   // Refresh repos.
   // TODO: Check logs!
