@@ -1078,10 +1078,19 @@ apk_polkit_get_packages_details_cb (GObject *object_source,
 }
 
 static gboolean
+gs_plugin_apk_launch_finish (GsPlugin *plugin,
+                             GAsyncResult *result,
+                             GError **error)
+{
+  return gs_plugin_app_launch_filtered_finish (plugin, result, error);
+}
+
+static gboolean
 gs_plugin_apk_filter_desktop_file_cb (GsPlugin *plugin,
                                       GsApp *app,
                                       const gchar *filename,
-                                      GKeyFile *key_file)
+                                      GKeyFile *key_file,
+                                      gpointer user_data)
 {
   return strstr (filename, "/snapd/") == NULL &&
          strstr (filename, "/snap/") == NULL &&
@@ -1091,17 +1100,16 @@ gs_plugin_apk_filter_desktop_file_cb (GsPlugin *plugin,
          !g_key_file_has_key (key_file, "Desktop Entry", "X-SnapInstanceName", NULL);
 }
 
-gboolean
-gs_plugin_launch (GsPlugin *plugin,
-                  GsApp *app,
-                  GCancellable *cancellable,
-                  GError **error)
-{
-  /* only process this app if was created by this plugin */
-  if (!gs_app_has_management_plugin (app, plugin))
-    return TRUE;
+static void
+gs_plugin_apk_launch_async (GsPlugin *plugin,
+                            GsApp *app,
+                            GsPluginLaunchFlags flags,
+                            GCancellable *cancellable,
+                            GAsyncReadyCallback callback,
+                            gpointer user_data)
 
-  return gs_plugin_app_launch_filtered (plugin, app, gs_plugin_apk_filter_desktop_file_cb, NULL, error);
+{
+  gs_plugin_app_launch_filtered_async (plugin, app, flags, gs_plugin_apk_filter_desktop_file_cb, NULL, cancellable, callback, user_data);
 }
 
 gboolean
@@ -1385,6 +1393,8 @@ gs_plugin_apk_class_init (GsPluginApkClass *klass)
   plugin_class->remove_repository_finish = gs_plugin_apk_remove_repository_finish;
   plugin_class->update_apps_async = gs_plugin_apk_update_apps_async;
   plugin_class->update_apps_finish = gs_plugin_apk_update_apps_finish;
+  plugin_class->launch_async = gs_plugin_apk_launch_async;
+  plugin_class->launch_finish = gs_plugin_apk_launch_finish;
 }
 
 GType
