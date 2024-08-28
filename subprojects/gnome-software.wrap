@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://gitlab.gnome.org/GNOME/gnome-software.git
+revision = 47.0
+depth = 1

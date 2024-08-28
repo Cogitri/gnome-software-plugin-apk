@@ -5,8 +5,26 @@ project(
     meson_version: '>=0.58'
 )
 
-gnome_software_dep = dependency('gnome-software', version: '>=44.0')
-plugin_install_dir = gnome_software_dep.get_variable('plugindir')
+gnome_software_dep = dependency(
+  'gnome-software',
+  version: '>=46.0',
+  fallback: ['gnome-software', 'libgnomesoftware_dep'],
+  default_options: [
+    'malcontent=false',
+    'packagekit=false',
+    'webapps=false',
+    'fwupd=false',
+    'hardcoded_foss_webapps=false',
+    'hardcoded_proprietary_webapps=false',
+    'external_appstream=true',
+    'gtk_doc=false',
+    'sysprof=disabled',
+  ],
+)
+plugin_install_dir = gnome_software_dep.get_variable(
+  'plugindir',
+  default_value: '/usr/lib/gnome-software/plugins-21',
+)
 
 cargs = [
   '-DG_LOG_DOMAIN="GsPluginApk"',
