@@ -307,53 +307,6 @@ apk_polkit_update_repositories_cb (GObject *source_object,
 }
 
 gboolean
-gs_plugin_add_updates (GsPlugin *plugin,
-                       GsAppList *list,
-                       GCancellable *cancellable,
-                       GError **error)
-{
-  GsPluginApk *self = GS_PLUGIN_APK (plugin);
-  g_autoptr (GVariant) upgradable_packages = NULL;
-  g_autoptr (GError) local_error = NULL;
-
-  /* I believe we have to invalidate the cache here! */
-  g_debug ("Adding updates");
-
-  if (!apk_polkit2_call_list_upgradable_packages_sync (self->proxy,
-                                                       APK_POLKIT_CLIENT_DETAILS_FLAGS_ALL,
-                                                       &upgradable_packages,
-                                                       cancellable,
-                                                       &local_error))
-    {
-      g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
-      return FALSE;
-    }
-
-  g_debug ("Found %" G_GSIZE_FORMAT " upgradable packages",
-           g_variant_n_children (upgradable_packages));
-
-  for (gsize i = 0; i < g_variant_n_children (upgradable_packages); i++)
-    {
-      g_autoptr (GVariant) dict = NULL;
-      GsApp *app;
-      ApkdPackage pkg = { NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, Available };
-
-      dict = g_variant_get_child_value (upgradable_packages, i);
-      /* list_upgradable_packages doesn't have array input, thus no error output */
-      if (!gs_plugin_apk_variant_to_apkd (dict, &pkg))
-        g_assert_not_reached ();
-      if (pkg.packageState == Upgradable || pkg.packageState == Downgradable)
-        {
-          app = apk_package_to_app (plugin, &pkg);
-          gs_app_list_add (list, app);
-        }
-    }
-
-  return TRUE;
-}
-
-gboolean
 gs_plugin_app_install (GsPlugin *plugin,
                        GsApp *app,
                        GCancellable *cancellable,
@@ -1114,8 +1067,8 @@ gs_plugin_apk_launch_async (GsPlugin *plugin,
 
 static GsAppList *
 gs_plugin_apk_list_apps_finish (GsPlugin *plugin,
-                                       GAsyncResult *result,
-                                       GError **error)
+                                GAsyncResult *result,
+                                GError **error)
 {
   return g_task_propagate_pointer (G_TASK (result), error);
 }
@@ -1126,12 +1079,17 @@ apk_polkit_list_repositories_cb (GObject *object_source,
                                  gpointer user_data);
 
 static void
+apk_polkit_list_upgradable_cb (GObject *object_source,
+                               GAsyncResult *res,
+                               gpointer user_data);
+
+static void
 gs_plugin_apk_list_apps_async (GsPlugin *plugin,
-                                      GsAppQuery *query,
-                                      GsPluginListAppsFlags flags,
-                                      GCancellable *cancellable,
-                                      GAsyncReadyCallback callback,
-                                      gpointer user_data)
+                               GsAppQuery *query,
+                               GsPluginListAppsFlags flags,
+                               GCancellable *cancellable,
+                               GAsyncReadyCallback callback,
+                               gpointer user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GTask) task = NULL;
@@ -1146,11 +1104,65 @@ gs_plugin_apk_list_apps_async (GsPlugin *plugin,
                                           apk_polkit_list_repositories_cb,
                                           g_steal_pointer (&task));
     }
+  else if (gs_app_query_get_is_for_update (query) == GS_APP_QUERY_TRISTATE_TRUE)
+    {
+      /* I believe we have to invalidate the cache here! */
+      g_debug ("Listing updates");
+      apk_polkit2_call_list_upgradable_packages (self->proxy,
+                                                 APK_POLKIT_CLIENT_DETAILS_FLAGS_ALL,
+                                                 cancellable,
+                                                 apk_polkit_list_upgradable_cb,
+                                                 g_steal_pointer (&task));
+    }
   else
     {
       g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
                                "Unsupported query");
     }
+}
+
+static void
+apk_polkit_list_upgradable_cb (GObject *object_source,
+                               GAsyncResult *res,
+                               gpointer user_data)
+{
+  g_autoptr (GTask) task = G_TASK (g_steal_pointer (&user_data));
+  GsPluginApk *self = g_task_get_source_object (task);
+  g_autoptr (GVariant) upgradable_packages = NULL;
+  g_autoptr (GError) local_error = NULL;
+  g_autoptr (GsAppList) list = gs_app_list_new ();
+
+  if (!apk_polkit2_call_list_upgradable_packages_finish (self->proxy,
+                                                         &upgradable_packages,
+                                                         res,
+                                                         &local_error))
+    {
+      g_dbus_error_strip_remote_error (local_error);
+      g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
+    }
+
+  g_debug ("Found %" G_GSIZE_FORMAT " upgradable packages",
+           g_variant_n_children (upgradable_packages));
+
+  for (gsize i = 0; i < g_variant_n_children (upgradable_packages); i++)
+    {
+      g_autoptr (GVariant) dict = NULL;
+      GsApp *app;
+      ApkdPackage pkg = { NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, Available };
+
+      dict = g_variant_get_child_value (upgradable_packages, i);
+      /* list_upgradable_packages doesn't have array input, thus no error output */
+      if (!gs_plugin_apk_variant_to_apkd (dict, &pkg))
+        g_assert_not_reached ();
+      if (pkg.packageState == Upgradable || pkg.packageState == Downgradable)
+        {
+          app = apk_package_to_app (GS_PLUGIN (self), &pkg);
+          gs_app_list_add (list, app);
+        }
+    }
+
+  g_task_return_pointer (task, g_steal_pointer (&list), g_object_unref);
 }
 
 static void
@@ -1200,10 +1212,11 @@ apk_polkit_list_repositories_cb (GObject *object_source,
 
       g_uri_split (url, G_URI_FLAGS_NONE, &url_scheme, NULL,
                    NULL, NULL, &url_path, NULL, NULL, &local_error);
-      if (local_error) {
-	      g_task_return_error (task, g_steal_pointer (&local_error));
-	      return;
-      }
+      if (local_error)
+        {
+          g_task_return_error (task, g_steal_pointer (&local_error));
+          return;
+        }
 
       /* Transform /some/repo/url into some.repo.url
          We are not allowed to use '/' in the app id. */
