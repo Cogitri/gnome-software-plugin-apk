@@ -1093,18 +1093,41 @@ gs_plugin_apk_list_apps_async (GsPlugin *plugin,
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GTask) task = NULL;
+  gboolean is_source, is_for_updates;
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, gs_plugin_apk_list_apps_async);
 
-  if (gs_app_query_get_is_source (query) == GS_APP_QUERY_TRISTATE_TRUE)
+  if (query == NULL)
+    {
+      g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                               "Unsupported query");
+      return;
+    }
+
+  is_source = gs_app_query_get_is_source (query);
+  is_for_updates = gs_app_query_get_is_for_update (query);
+
+  /* Currently only support a subset of query properties, and only one set at once.
+   * This is a pattern taken from upstream!
+   */
+  if (is_source == is_for_updates ||
+      is_source == GS_APP_QUERY_TRISTATE_FALSE ||
+      is_for_updates == GS_APP_QUERY_TRISTATE_FALSE)
+    {
+      g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                               "Unsupported query");
+      return;
+    }
+
+  if (is_source == GS_APP_QUERY_TRISTATE_TRUE)
     {
       g_debug ("Listing repositories");
       apk_polkit2_call_list_repositories (self->proxy, cancellable,
                                           apk_polkit_list_repositories_cb,
                                           g_steal_pointer (&task));
     }
-  else if (gs_app_query_get_is_for_update (query) == GS_APP_QUERY_TRISTATE_TRUE)
+  else if (is_for_updates == GS_APP_QUERY_TRISTATE_TRUE)
     {
       /* I believe we have to invalidate the cache here! */
       g_debug ("Listing updates");
@@ -1116,8 +1139,7 @@ gs_plugin_apk_list_apps_async (GsPlugin *plugin,
     }
   else
     {
-      g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
-                               "Unsupported query");
+      g_assert_not_reached ();
     }
 }
 
