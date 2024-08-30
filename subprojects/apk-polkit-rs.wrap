@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://gitlab.alpinelinux.org/Cogitri/apk-polkit-rs.git
+revision = master
+depth = 1
