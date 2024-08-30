@@ -6,8 +6,8 @@
  */
 
 #include "gs-plugin-apk.h"
-#include <apk-polkit-2/apk-polkit-client-bitflags.h>
-#include <apk-polkit-2/apk-polkit-client.h>
+#include <apk-polkit-client-bitflags.h>
+#include <apk-polkit-client.h>
 #include <appstream.h>
 #include <gnome-software.h>
 #include <libintl.h>
