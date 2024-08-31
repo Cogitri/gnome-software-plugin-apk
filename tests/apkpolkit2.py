@@ -55,10 +55,11 @@ def load(mock, parameters):
     ])
 
 
-@dbus.service.method(MAIN_IFACE, in_signature='s', out_signature='')
-def AddPackage(self, pkg_name):
-    if (pkg_name == "slow"):
-        time.sleep(10)
+@dbus.service.method(MAIN_IFACE, in_signature='as', out_signature='')
+def AddPackages(self, pkg_list):
+    for pkg in pkg_list:
+        if pkg == "slow":
+            time.sleep(10)
 
 @dbus.service.method(MAIN_IFACE, in_signature='s', out_signature='')
 def DeletePackage(self, pkg_name):
