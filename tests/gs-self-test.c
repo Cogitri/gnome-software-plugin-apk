@@ -15,11 +15,6 @@
 /* { */
 /* } */
 
-/* static void */
-/* gs_plugin_refine_func (void) */
-/* { */
-/* } */
-
 static void
 gs_plugins_apk_repo_actions (GsPluginLoader *plugin_loader)
 {
@@ -173,6 +168,7 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
   g_autoptr (GError) error = NULL;
   g_autoptr (GsPluginJob) plugin_job = NULL;
   g_autoptr (GsApp) app = NULL;
+  g_autoptr (GsAppList) list = gs_app_list_new ();
   g_autoptr (GsPlugin) plugin = NULL;
   g_autoptr (GsAppQuery) query = NULL;
   const char *keywords[2] = { "apk-test", NULL };
@@ -199,9 +195,9 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
 
   // execute installation action
   g_object_unref (plugin_job);
-  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_INSTALL,
-                                   "app", app,
-                                   NULL);
+  gs_app_list_add (list, app);
+  plugin_job = gs_plugin_job_install_apps_new (list,
+                                               GS_PLUGIN_INSTALL_APPS_FLAGS_NONE);
   rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);
