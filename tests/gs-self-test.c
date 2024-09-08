@@ -207,10 +207,11 @@ gs_plugins_apk_app_install_remove (GsPluginLoader *plugin_loader)
   g_assert_cmpint (gs_app_get_state (app), ==, GS_APP_STATE_INSTALLED);
 
   // Execute remove action
+  gs_app_list_remove_all (list);
   g_object_unref (plugin_job);
-  plugin_job = gs_plugin_job_newv (GS_PLUGIN_ACTION_REMOVE,
-                                   "app", app,
-                                   NULL);
+  gs_app_list_add (list, app);
+  plugin_job = gs_plugin_job_uninstall_apps_new (list,
+                                                 GS_PLUGIN_UNINSTALL_APPS_FLAGS_NONE);
   rc = gs_plugin_loader_job_action (plugin_loader, plugin_job, NULL, &error);
   gs_test_flush_main_context ();
   g_assert_no_error (error);

@@ -422,40 +422,108 @@ apk_polkit_add_packages_cb (GObject *object_source,
   g_task_return_boolean (task, TRUE);
 }
 
-gboolean
-gs_plugin_app_remove (GsPlugin *plugin,
-                      GsApp *app,
-                      GCancellable *cancellable,
-                      GError **error)
+static gboolean
+gs_plugin_apk_uninstall_apps_finish (GsPlugin *plugin,
+                                     GAsyncResult *result,
+                                     GError **error)
+{
+  return g_task_propagate_boolean (G_TASK (result), error);
+}
+
+static void
+apk_polkit_del_packages_cb (GObject *object_source,
+                            GAsyncResult *res,
+                            gpointer user_data);
+
+static void
+gs_plugin_apk_uninstall_apps_async (GsPlugin *plugin,
+                                    GsAppList *list,
+                                    GsPluginUninstallAppsFlags flags,
+                                    GsPluginProgressCallback progress_callback,
+                                    gpointer progress_user_data,
+                                    GsPluginAppNeedsUserActionCallback app_needs_user_action_callback,
+                                    gpointer app_needs_user_action_data,
+                                    GCancellable *cancellable,
+                                    GAsyncReadyCallback callback,
+                                    gpointer user_data)
 {
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
+  g_autoptr (GTask) task = NULL;
   g_autoptr (GError) local_error = NULL;
-  g_autofree gchar *source = NULL;
+  g_autoptr (GsAppList) del_list = gs_app_list_new ();
+  g_autofree const gchar **source_array = NULL;
 
-  g_return_val_if_fail (gs_app_get_kind (app) != AS_COMPONENT_KIND_REPOSITORY, TRUE);
+  task = g_task_new (plugin, cancellable, callback, user_data);
+  g_task_set_source_tag (task, gs_plugin_apk_uninstall_apps_async);
 
-  /* We can only remove apps we know of */
-  if (!gs_app_has_management_plugin (app, plugin))
-    return TRUE;
-
-  source = gs_plugin_apk_get_source (app, error);
-  if (source == NULL)
-    return FALSE;
-
-  g_debug ("Trying to remove app %s", gs_app_get_unique_id (app));
-  gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
-  gs_app_set_state (app, GS_APP_STATE_REMOVING);
-
-  if (!apk_polkit2_call_delete_package_sync (self->proxy, source, cancellable, &local_error))
+  for (int i = 0; i < gs_app_list_length (list); i++)
     {
-      g_dbus_error_strip_remote_error (local_error);
-      g_propagate_error (error, g_steal_pointer (&local_error));
-      gs_app_set_state_recover (app);
-      return FALSE;
+      GsApp *app = gs_app_list_index (list, i);
+
+      /* disable repo, handled by dedicated function */
+      g_assert (gs_app_get_kind (app) != AS_COMPONENT_KIND_REPOSITORY);
+      g_debug ("Considering app %s for uninstallation", gs_app_get_unique_id (app));
+
+      /* We can only remove apps we know of */
+      if (!gs_app_has_management_plugin (app, plugin))
+        {
+          g_debug ("App %s is not managed by us, not uninstalling", gs_app_get_unique_id (app));
+          continue;
+        }
+
+      gs_app_list_add (del_list, app);
+      gs_app_set_state (app, GS_APP_STATE_REMOVING);
     }
 
-  gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
-  return TRUE;
+  source_array = g_new0 (const gchar *, gs_app_list_length (del_list) + 1);
+  for (int i = 0; i < gs_app_list_length (del_list); i++)
+    {
+      GsApp *app = gs_app_list_index (del_list, i);
+      g_autofree gchar *source = gs_plugin_apk_get_source (app, &local_error);
+      if (source == NULL)
+        {
+          g_task_return_error (task, g_steal_pointer (&local_error));
+          return;
+        }
+      source_array[i] = gs_app_get_source_default (app);
+    }
+
+  g_task_set_task_data (task, g_steal_pointer (&del_list), g_object_unref);
+  apk_polkit2_call_delete_packages (self->proxy, source_array, cancellable,
+                                    apk_polkit_del_packages_cb,
+                                    g_steal_pointer (&task));
+}
+
+static void
+apk_polkit_del_packages_cb (GObject *object_source,
+                            GAsyncResult *res,
+                            gpointer user_data)
+{
+  g_autoptr (GTask) task = g_steal_pointer (&user_data);
+  GsPluginApk *self = g_task_get_source_object (task);
+  GsAppList *del_list = g_task_get_task_data (task);
+  g_autoptr (GError) local_error = NULL;
+
+  if (!apk_polkit2_call_add_packages_finish (self->proxy, res, &local_error))
+    {
+      for (int i = 0; i < gs_app_list_length (del_list); i++)
+        {
+          GsApp *app = gs_app_list_index (del_list, i);
+          gs_app_set_state_recover (app);
+        }
+
+      g_dbus_error_strip_remote_error (local_error);
+      g_task_return_error (task, g_steal_pointer (&local_error));
+      return;
+    }
+
+  for (int i = 0; i < gs_app_list_length (del_list); i++)
+    {
+      GsApp *app = gs_app_list_index (del_list, i);
+      gs_app_set_state (app, GS_APP_STATE_AVAILABLE);
+    }
+
+  g_task_return_boolean (task, TRUE);
 }
 
 /**
@@ -1552,6 +1620,8 @@ gs_plugin_apk_class_init (GsPluginApkClass *klass)
   plugin_class->remove_repository_finish = gs_plugin_apk_remove_repository_finish;
   plugin_class->install_apps_async = gs_plugin_apk_install_apps_async;
   plugin_class->install_apps_finish = gs_plugin_apk_install_apps_finish;
+  plugin_class->uninstall_apps_async = gs_plugin_apk_uninstall_apps_async;
+  plugin_class->uninstall_apps_finish = gs_plugin_apk_uninstall_apps_finish;
   plugin_class->update_apps_async = gs_plugin_apk_update_apps_async;
   plugin_class->update_apps_finish = gs_plugin_apk_update_apps_finish;
   plugin_class->launch_async = gs_plugin_apk_launch_async;
