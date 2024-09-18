@@ -126,6 +126,8 @@ gs_plugins_apk_updates (GsPluginLoader *plugin_loader)
   // Check desktop app
   desktop_app = gs_app_list_index (update_list, 0);
   g_assert_nonnull (desktop_app);
+  g_assert_false (gs_app_has_quirk (desktop_app, GS_APP_QUIRK_IS_PROXY));
+  g_assert_cmpstr (gs_app_get_name (desktop_app), ==, "ApkTestApp");
   g_assert_cmpint (gs_app_get_state (desktop_app), ==, GS_APP_STATE_UPDATABLE_LIVE);
   // Check generic proxy app
   generic_app = gs_app_list_index (update_list, 1);
@@ -282,13 +284,13 @@ main (int argc, char **argv)
                   "<components origin=\"alpine-test\" version=\"0.9\">\n"
                   "  <component type=\"desktop\">\n"
                   "    <id>apk-test-app.desktop</id>\n"
-                  "    <name>apk-test-app</name>\n"
+                  "    <name>ApkTestApp</name>\n"
                   "    <summary>Alpine Package Keeper test app</summary>\n"
                   "    <pkgname>apk-test-app</pkgname>\n"
                   "  </component>\n"
                   "  <component type=\"desktop\">\n"
                   "    <id>no-source-app.desktop</id>\n"
-                  "    <name>no-source-app</name>\n"
+                  "    <name>NoSourceApp</name>\n"
                   "    <summary>App with missing source in metadata</summary>\n"
                   "    <info>\n"
                   "      <filename>/usr/share/apps/no-source-app.desktop</filename>\n"
