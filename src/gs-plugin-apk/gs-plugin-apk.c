@@ -906,6 +906,7 @@ gs_plugin_apk_refine_async (GsPlugin *plugin,
       if (gs_app_get_state (app) == GS_APP_STATE_UNKNOWN)
         data->flags |= GS_PLUGIN_REFINE_FLAGS_REQUIRE_SETUP_ACTION;
 
+      g_debug ("Selecting app %s for refine", gs_app_get_unique_id (app));
       gs_app_list_add (refine_apps_list, app);
     }
 
@@ -1083,6 +1084,7 @@ refine_apk_packages_cb (GObject *object_source,
          GS_PLUGIN_REFINE_FLAGS_REQUIRE_URL |
          GS_PLUGIN_REFINE_FLAGS_REQUIRE_LICENSE)))
     {
+      g_debug ("Ignoring refine");
       g_task_return_boolean (task, TRUE);
       return;
     }
@@ -1118,6 +1120,7 @@ refine_apk_packages_cb (GObject *object_source,
   for (int i = 0; i < gs_app_list_length (list); i++)
     {
       GsApp *app = gs_app_list_index (list, i);
+      g_debug ("Requesting details for %s", gs_app_get_unique_id (app));
       source_array[i] = gs_app_get_source_default (app);
     }
   source_array[gs_app_list_length (list)] = NULL;
