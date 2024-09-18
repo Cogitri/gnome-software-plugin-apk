@@ -10,7 +10,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: cogitri/gnome-software-plugin-apk-ci
-  VERSION: 43
+  VERSION: 47
 
 jobs:
   build-test-and-push-image:

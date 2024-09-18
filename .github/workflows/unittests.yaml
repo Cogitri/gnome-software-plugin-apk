@@ -10,7 +10,7 @@ jobs:
     permissions:
       packages: read
     container:
-      image: ghcr.io/cogitri/gnome-software-plugin-apk-ci:43
+      image: ghcr.io/cogitri/gnome-software-plugin-apk-ci:47
       credentials:
         username: cogitri
         password: ${{ secrets.GITHUB_TOKEN }}
