@@ -946,7 +946,7 @@ fix_app_missing_appstream_async (GsPlugin *plugin,
 
   task = g_task_new (plugin, cancellable, callback, user_data);
   g_task_set_source_tag (task, fix_app_missing_appstream_async);
-  g_task_set_task_data (task, g_object_ref (list), g_object_unref);
+  g_task_set_task_data (task, g_object_ref (search_list), g_object_unref);
 
   if (gs_app_list_length (list) == 0)
     {
