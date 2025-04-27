@@ -14,7 +14,7 @@ cargs = [
   '-DGS_PLUGIN_APK_VERSION="@0@"'.format(meson.project_version()),
 ]
 
-apk_dep = dependency('apk-polkit-client-2')
+apk_dep = dependency('apk-polkit-client-2', version: '>=3.0.0')
 glib_dep = dependency('glib-2.0', version: '>=2.60')
 gobject_dep = dependency('gobject-2.0')
 gio_dep = dependency('gio-2.0')

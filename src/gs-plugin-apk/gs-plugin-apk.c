@@ -362,6 +362,7 @@ gs_plugin_app_install (GsPlugin *plugin,
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GError) local_error = NULL;
   g_autofree gchar *source = NULL;
+  const gchar *source_array[] = {NULL, NULL};
 
   g_return_val_if_fail (gs_app_get_kind (app) != AS_COMPONENT_KIND_REPOSITORY, TRUE);
 
@@ -376,8 +377,9 @@ gs_plugin_app_install (GsPlugin *plugin,
   g_debug ("Trying to install app %s", gs_app_get_unique_id (app));
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_INSTALLING);
+  source_array[0] = source;
 
-  if (!apk_polkit2_call_add_package_sync (self->proxy, source, cancellable, &local_error))
+  if (!apk_polkit2_call_add_packages_sync (self->proxy, source_array, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
@@ -398,6 +400,7 @@ gs_plugin_app_remove (GsPlugin *plugin,
   GsPluginApk *self = GS_PLUGIN_APK (plugin);
   g_autoptr (GError) local_error = NULL;
   g_autofree gchar *source = NULL;
+  const gchar *source_array[] = {NULL, NULL};
 
   g_return_val_if_fail (gs_app_get_kind (app) != AS_COMPONENT_KIND_REPOSITORY, TRUE);
 
@@ -412,8 +415,9 @@ gs_plugin_app_remove (GsPlugin *plugin,
   g_debug ("Trying to remove app %s", gs_app_get_unique_id (app));
   gs_app_set_progress (app, GS_APP_PROGRESS_UNKNOWN);
   gs_app_set_state (app, GS_APP_STATE_REMOVING);
+  source_array[0] = source;
 
-  if (!apk_polkit2_call_delete_package_sync (self->proxy, source, cancellable, &local_error))
+  if (!apk_polkit2_call_delete_packages_sync (self->proxy, source_array, cancellable, &local_error))
     {
       g_dbus_error_strip_remote_error (local_error);
       g_propagate_error (error, g_steal_pointer (&local_error));
